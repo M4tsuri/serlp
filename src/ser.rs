@@ -77,33 +77,24 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
-    // Here we go with the simple methods. The following 12 methods receive one
-    // of the primitive types of the data model and map it to JSON by appending
-    // into the output string.
+    // yellow paper didn't mention how to encode bool and floats
     impl_seralize_not_supported! {bool, f32, f64}
     
-    // JSON does not distinguish between different sizes of integers, so all
-    // signed integers will be serialized the same and all unsigned integers
-    // will be serialized the same. Other formats, especially compact binary
-    // formats, may need independent logic for the different sizes.
+    // according to yellow paper, integers should be encoded as bytes (big endian)
     impl_seralize_integer! {i8, i16, i32, i64, u8, u16, u32, u64}
 
-    // Serialize a char as a single-character string. Other formats may
-    // represent this differently.
+    /// Serialize a char as a single-character string. 
     fn serialize_char(self, v: char) -> Result<()> {
         self.serialize_str(&v.to_string())
     }
 
-    // This only works for strings that don't require escape sequences but you
-    // get the idea. For example it would emit invalid JSON if the input string
-    // contains a '"' character.
+    /// strings are bytes. THE YELLOW PAPER IS ALWAYS RIGHT!!!
     fn serialize_str(self, v: &str) -> Result<()> {
         self.serialize_bytes(v.as_bytes())
     }
 
-    // Serialize a byte array as an array of bytes. Could also use a base64
-    // string here. Binary formats will typically represent byte arrays more
-    // compactly.
+    /// YELLOW PAPER told us how to encode a byte array.
+    /// LONG LIVE THE YELLOW PAPER!
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
         let last = self.stack.last_mut().unwrap();
         match v.len() as u64 {
@@ -127,16 +118,13 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    // An absent optional is represented as the JSON `null`.
+    /// nothing
+    /// So what is the difference between (), (()), None, "" and []
     fn serialize_none(self) -> Result<()> {
         Ok(())
     }
 
-    // A present optional is represented as just the contained value. Note that
-    // this is a lossy representation. For example the values `Some(())` and
-    // `None` both serialize as just `null`. Unfortunately this is typically
-    // what people expect when working with JSON. Other formats are encouraged
-    // to behave more intelligently if possible.
+    /// I don't know what is it, so I serialize it
     fn serialize_some<T>(self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
@@ -144,23 +132,18 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         value.serialize(self)
     }
 
-    // In Serde, unit means an anonymous value containing no data. Map this to
-    // JSON as `null`.
+    /// There is nothing
+    /// So what is the difference between (), (()), None, "" and []
     fn serialize_unit(self) -> Result<()> {
         Ok(())
     }
 
-    // Unit struct means a named value containing no data. Again, since there is
-    // no data, map this to JSON as `null`. There is no need to serialize the
-    // name in most formats.
+    /// Another Nothing 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
         self.serialize_unit()
     }
 
-    // When serializing a unit variant (or any other kind of variant), formats
-    // can choose whether to keep track of it by index or by name. Binary
-    // formats typically use the index of the variant and human-readable formats
-    // typically use the name.
+    /// MORE NOTHING
     fn serialize_unit_variant(
         self,
         _name: &'static str,
@@ -170,8 +153,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Err(Error::TypeNotSupported)
     }
 
-    // As is done here, serializers are encouraged to treat newtype structs as
-    // insignificant wrappers around the data they contain.
+    /// This is TRANSPARENT!
     fn serialize_newtype_struct<T>(
         self,
         _name: &'static str,
@@ -183,7 +165,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         value.serialize(self)
     }
 
-    // newtype variant is not supported in RLP
+    /// TRANSPARENT! But we do not support it.
+    /// What a pity.
     fn serialize_newtype_variant<T>(
         self,
         _name: &'static str,
@@ -197,7 +180,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Err(Error::TypeNotSupported)
     }
 
-    // serialize a sequence, the sequence will be parsed recursively
+    /// serialize a sequence, the sequence will be parsed recursively
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
         self.stack.push(Vec::new());
         Ok(self)
@@ -208,7 +191,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(self)
     }
 
-    // Tuple structs look just like sequences in JSON.
+    /// There is only a tuple
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
@@ -217,8 +200,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         self.serialize_tuple(len)
     }
 
-    // Tuple variants are represented in JSON as `{ NAME: [DATA...] }`. Again
-    // this method is only responsible for the externally tagged representation.
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
@@ -229,16 +210,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Err(Error::TypeNotSupported)
     }
 
-    // Maps are represented in JSON as `{ K: V, K: V, ... }`.
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
         Err(Error::TypeNotSupported)
     }
 
-    // Structs look just like maps in JSON. In particular, JSON requires that we
-    // serialize the field names of the struct. Other formats may be able to
-    // omit the field names when serializing structs because the corresponding
-    // Deserialize implementation is required to know what the keys are without
-    // looking at the serialized data.
+    /// We parse struct as we are parsing a sequence
     fn serialize_struct(
         self,
         _name: &'static str,
@@ -248,8 +224,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(self)
     }
 
-    // Struct variants are represented in JSON as `{ NAME: { K: V, ... } }`.
-    // This is the externally tagged representation.
     fn serialize_struct_variant(
         self,
         _name: &'static str,
@@ -261,13 +235,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 }
 
-// The following 7 impls deal with the serialization of compound types like
-// sequences and maps. Serialization of such types is begun by a Serializer
-// method and followed by zero or more calls to serialize individual elements of
-// the compound type and one call to end the compound type.
-//
-// This impl is SerializeSeq so these methods are called after `serialize_seq`
-// is called on the Serializer.
+/// This impl is SerializeSeq so these methods are called after `serialize_seq`
+/// is called on the Serializer.
 impl<'a> ser::SerializeSeq for &'a mut Serializer {
     // Must match the `Ok` type of the serializer.
     type Ok = ();
