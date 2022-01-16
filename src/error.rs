@@ -22,6 +22,8 @@ pub enum Error {
     // Deserializer without going through `ser::Error` and `de::Error`. These
     // are specific to the format, in this case JSON.
     Eof,
+    UnknownSeqLength,
+    TypeNotSupported,
     TrailingCharacters,
 }
 
@@ -43,6 +45,8 @@ impl Display for Error {
             Error::Message(msg) => formatter.write_str(msg),
             Error::Eof => formatter.write_str("unexpected end of input"),
             Error::TrailingCharacters => formatter.write_str("unexpected trailing characters"),
+            Error::TypeNotSupported => formatter.write_str("Type is not supported as it not documented in the yellow paper."),
+            Error::UnknownSeqLength => formatter.write_str("Sequence lenght must be known at compile time.")
         }
     }
 }

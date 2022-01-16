@@ -1,5 +1,6 @@
-mod rlp;
-mod error;
+pub mod rlp;
+pub mod error;
+
 
 #[cfg(test)]
 mod tests {
