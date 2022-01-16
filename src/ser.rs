@@ -7,6 +7,13 @@ pub struct Serializer {
     stack: Vec<Vec<u8>>
 }
 
+fn get_be_bytes_compact(src: &[u8]) -> &[u8] {
+    for (i, &c) in src.iter().enumerate() {
+        if c != 0 { return src.split_at(i).1 }
+    }
+    unreachable!()
+}
+
 // By convention, the public API of a Serde serializer is one or more `to_abc`
 // functions such as `to_string`, `to_bytes`, or `to_writer` depending on what
 // Rust types the serializer is able to produce as output.
@@ -109,7 +116,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             },
             // (183 + ||BE(||x||)||) \dot BE(||x||) \dot x if ||x|| \lt 2^64
             56..=u64::MAX => {
-                let len_be = v.len().to_be_bytes();
+                let be_bytes = v.len().to_be_bytes();
+                let len_be = get_be_bytes_compact(&be_bytes);
                 last.push(183 + len_be.len() as u8);
                 last.extend(len_be);
                 last.extend(v);
@@ -234,9 +242,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_struct(
         self,
         _name: &'static str,
-        len: usize,
+        _len: usize,
     ) -> Result<Self::SerializeStruct> {
-        self.serialize_map(Some(len))
+        self.stack.push(Vec::new());
+        Ok(self)
     }
 
     // Struct variants are represented in JSON as `{ NAME: { K: V, ... } }`.
@@ -413,17 +422,17 @@ impl Serializer {
 
         match len as u64 {
             // (192 + ||s(x)||) \dot s(x) if s(x) \ne \empty \land ||s(x)|| \lt 56
-            1..=55 => {
+            0..=55 => {
                 last.push(192 + len as u8);
                 last.extend(frame);
             },
             56..=u64::MAX => {
-                let len_be = len.to_be_bytes();
+                let be_bytes = len.to_be_bytes();
+                let len_be = get_be_bytes_compact(&be_bytes);
                 last.push(247 + len_be.len() as u8);
                 last.extend(len_be);
                 last.extend(frame);
-            },
-            _ => {}
+            }
         }
         
     }
@@ -449,45 +458,121 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[test]
-fn test_struct() {
-    #[derive(Serialize)]
-    struct Test {
-        int: u32,
-        seq: Vec<&'static str>,
+#[cfg(test)]
+mod test {
+    use std::vec;
+
+    use serde::Serialize;
+    use serde_bytes::Bytes;
+
+    use crate::ser::to_bytes;
+
+    #[test]
+    fn test_long_string() {
+        #[derive(Serialize)]
+        struct LongStr<'a>(&'a str);
+
+        let long_str = LongStr("Lorem ipsum dolor sit amet, consectetur adipisicing elit");
+        let expected: Vec<u8> = [0xb8_u8, 0x38_u8]
+            .into_iter()
+            .chain(long_str.0.as_bytes().to_owned())
+            .collect();
+        assert_eq!(to_bytes(&long_str).unwrap(), expected)
     }
 
-    let test = Test {
-        int: 1,
-        seq: vec!["a", "b"],
-    };
-    let expected = r#"{"int":1,"seq":["a","b"]}"#;
-    assert_eq!(to_string(&test).unwrap(), expected);
-}
+    #[test]
+    fn test_set_theoretic_definition() {
+        // [ [], [[]], [ [], [[]] ] ]
+        #[derive(Serialize)]
+        struct Three<T>(T);
 
-#[test]
-fn test_enum() {
-    #[derive(Serialize)]
-    enum E {
-        Unit,
-        Newtype(u32),
-        Tuple(u32, u32),
-        Struct { a: u32 },
+        let three = Three(vec![vec![], vec![vec![]], vec![vec![], vec![vec![0_u8; 0]]]]);
+
+        let three_expected = [0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0];
+        assert_eq!(to_bytes(&three).unwrap(), three_expected)
     }
 
-    let u = E::Unit;
-    let expected = r#""Unit""#;
-    assert_eq!(to_string(&u).unwrap(), expected);
+    #[test]
+    fn test_1024() {
+        #[derive(Serialize)]
+        struct Int(u16);
 
-    let n = E::Newtype(1);
-    let expected = r#"{"Newtype":1}"#;
-    assert_eq!(to_string(&n).unwrap(), expected);
+        let simp_str = Int(1024);
+        let simp_str_expected = [0x82, 0x04, 0x00];
 
-    let t = E::Tuple(1, 2);
-    let expected = r#"{"Tuple":[1,2]}"#;
-    assert_eq!(to_string(&t).unwrap(), expected);
+        assert_eq!(to_bytes(&simp_str).unwrap(), simp_str_expected)
+    }
 
-    let s = E::Struct { a: 1 };
-    let expected = r#"{"Struct":{"a":1}}"#;
-    assert_eq!(to_string(&s).unwrap(), expected);
+    #[test]
+    fn test_15() {
+        #[derive(Serialize)]
+        struct Int(u8);
+
+        let simp_str = Int(15);
+        let simp_str_expected = [0xf];
+
+        assert_eq!(to_bytes(&simp_str).unwrap(), simp_str_expected)
+    }
+
+    #[test]
+    fn test_zero() {
+        #[derive(Serialize)]
+        struct Int(u8);
+
+        let simp_str = Int(0);
+        let simp_str_expected = [0x00];
+
+        assert_eq!(to_bytes(&simp_str).unwrap(), simp_str_expected)
+    }
+
+    #[test]
+    fn test_empty() {
+        let simp_str = Bytes::new(b"");
+        let simp_str_expected = [0x80];
+
+        assert_eq!(to_bytes(&simp_str).unwrap(), simp_str_expected)
+    }
+
+    #[test]
+    fn test_bytes() {
+        let simp_str = Bytes::new(b"dog");
+        let simp_str_expected = [0x83, b'd', b'o', b'g'];
+
+        assert_eq!(to_bytes(&simp_str).unwrap(), simp_str_expected)
+    }
+
+    #[test]
+    fn test_list() {
+        #[derive(Serialize)]
+        struct SimpList {
+            #[serde(with = "serde_bytes")]
+            cat: Vec<u8>,
+            #[serde(with = "serde_bytes")]
+            dog: Vec<u8>
+        }
+
+        let simp_list = SimpList {
+            cat: b"cat".to_vec(),
+            dog: b"dog".to_vec(),
+        };
+        let simp_list_expected = [0xc8, 0x83, b'c', b'a', b't', 0x83, b'd', b'o', b'g'];
+
+        assert_eq!(to_bytes(&simp_list).unwrap(), simp_list_expected);
+    }
+
+    #[test]
+    fn test_empty_list() {
+        #[derive(Serialize)]
+        struct SimpList {
+        }
+
+        let simp_list = SimpList {
+        };
+
+        let simp_list_expected = [0xc0];
+
+        assert_eq!(to_bytes(&simp_list).unwrap(), simp_list_expected);
+    }
+
 }
+

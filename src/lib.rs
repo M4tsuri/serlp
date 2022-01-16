@@ -1,6 +1,7 @@
-pub mod rlp;
+pub mod ser;
 pub mod error;
 
+pub use serde_bytes;
 
 #[cfg(test)]
 mod tests {

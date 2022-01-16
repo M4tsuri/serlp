@@ -1,5 +1,5 @@
 [package]
-name = "rlp"
+name = "serde_rlp"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0.133", features = ['derive'] }
 paste = "1.0"
+serde_bytes = "0.11"
