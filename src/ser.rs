@@ -121,7 +121,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     /// nothing
     /// So what is the difference between (), (()), None, "" and []
     fn serialize_none(self) -> Result<()> {
-        Ok(())
+        Err(Error::TypeNotSupported)
     }
 
     /// I don't know what is it, so I serialize it
@@ -129,7 +129,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(self)
+        Err(Error::TypeNotSupported)
     }
 
     /// There is nothing
