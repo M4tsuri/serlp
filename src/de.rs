@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use serde::Deserialize;
 use serde::de::{
-    self, DeserializeSeed, MapAccess, SeqAccess, Visitor,
+    self, DeserializeSeed, SeqAccess, Visitor,
 };
 use byteorder::{BigEndian, ReadBytesExt};
 
@@ -86,40 +86,46 @@ impl<'a> RLPNode<'a> {
     }
 }
 
-struct RLPTree<'a> {
+struct RLPTree<'de> {
     /// the max capicity of this node is 1, we only use VecDeque for consistency
-    root: VecDeque<RLPNode<'a>>
+    root: VecDeque<RLPNode<'de>>
 }
 
-impl<'a> RLPTree<'a> {
-    fn new(buf: &'a [u8]) -> Result<Self> {
-        let queue = VecDeque::with_capacity(1);
+impl<'de> RLPTree<'de> {
+    fn new(buf: &'de [u8]) -> Result<Self> {
+        let mut queue = VecDeque::with_capacity(1);
         queue.push_back(RLPNode::from_bytes(buf)?);
         Ok(Self {
             root: queue
         })
     }
 
-    fn is_empty(&self) -> bool {
-        self.root.is_empty()
-    }
-
-    fn pop_front_deep(root: &'a mut VecDeque<RLPNode>) -> Option<&'a [u8]> {
-        match root.pop_front() {
-            Some(RLPNode::Bytes(bytes)) => Some(bytes),
-            Some(RLPNode::Compound(compount)) => Self::pop_front_deep(&mut compount),
-            None => None
-        }
-    } 
-
     /// get the next value 
-    fn next(&'a mut self) -> Option<&'a [u8]> {
-        Self::pop_front_deep(&mut self.root)
+    fn next(&mut self) -> Option<&'de [u8]> {
+        let mut root = &mut self.root;
+        loop {
+            match root.front() {
+                Some(RLPNode::Bytes(_)) => {
+                    let RLPNode::Bytes(bytes) = root.pop_front().unwrap() else {
+                        unreachable!()
+                    };
+                    return Some(bytes)
+                }
+                Some(RLPNode::Compound(_)) => {
+                    let RLPNode::Compound(compound) = root.front_mut().unwrap() else {
+                        unreachable!()
+                    };
+                    root = compound;
+                }
+                None => return None
+            }
+        }
+        
     }   
 }
 
 pub struct Deserializer<'de> {
-    tree: RLPTree<'de>
+    tree: RLPTree<'de>,
 }
 
 impl<'de> Deserializer<'de> {
@@ -129,7 +135,7 @@ impl<'de> Deserializer<'de> {
     // deserializer can make one with `serde_json::Deserializer::from_str(...)`.
     pub fn new(input: &'de [u8]) -> Result<Self> {
         Ok(Deserializer { 
-            tree: RLPTree::new(input)?
+            tree: RLPTree::new(input)?,
         })
     }
 }
@@ -145,11 +151,7 @@ where
 {
     let mut deserializer = Deserializer::new(s)?;
     let t = T::deserialize(&mut deserializer)?;
-    if deserializer.tree.is_empty() {
-        Ok(t)
-    } else {
-        Err(Error::TrailingCharacters)
-    }
+    Ok(t)
 }
 
 macro_rules! impl_deseralize_not_supported {
@@ -227,9 +229,11 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_string(String::from_utf8(self.tree.next()
-            .ok_or(Error::MalformedData)?
-            .to_vec()).or(Err(Error::MalformedData))?)
+        let string = std::str::from_utf8(self.tree.next()
+            .ok_or(Error::MalformedData)?)
+            .or(Err(Error::MalformedData))?;
+
+        visitor.visit_borrowed_str(string)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -256,7 +260,7 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         unimplemented!()
     }
     
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -305,7 +309,8 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         // lifetime is 'a
-        visitor.visit_seq(self)
+        // unimplemented!()
+        visitor.visit_seq(DeSeq {de: self})
     }
 
     // Tuples look just like sequences in JSON. Some formats may be able to
@@ -344,7 +349,7 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self,
         _name: &'static str,
         _fields: &'static [&'static str],
-        visitor: V,
+        _visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -357,7 +362,7 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self,
         _name: &'static str,
         _variants: &'static [&'static str],
-        visitor: V,
+        _visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -366,9 +371,15 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
+
+struct DeSeq<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+}
+
+
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'de: 'a, 'a> SeqAccess<'de> for Deserializer<'de> {
+impl<'de, 'a> SeqAccess<'de> for DeSeq<'a, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -376,8 +387,6 @@ impl<'de: 'a, 'a> SeqAccess<'de> for Deserializer<'de> {
         T: DeserializeSeed<'de>,
     {
         // Deserialize an array element.
-        seed.deserialize(self).map(Some)
+        seed.deserialize(&mut *self.de).map(Some)
     }
 }
-
-
