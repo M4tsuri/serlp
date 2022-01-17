@@ -2,6 +2,13 @@
 name = "serde_rlp"
 version = "0.1.0"
 edition = "2021"
+license-file = "LICENSE"
+description = "The serde serializer and deserializer for RLP (Recursive Length Prefix) encoding."
+repository = "https://github.com/M4tsuri/serde_rlp"
+readme = "README.md"
+keywords = ["eth", "RLP", "serde", "serialize"]
+categories = ["encoding"]
+authors = ["M4tsuri <me@m4tsuri.com>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

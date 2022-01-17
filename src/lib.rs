@@ -1,5 +1,3 @@
-#![feature(let_else)]
-
 pub mod ser;
 pub mod error;
 pub mod de;
