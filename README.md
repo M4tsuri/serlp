@@ -1,12 +1,14 @@
-## A toy serializer for RLP encoding in ETH
+## A toy (de)serializer for RLP encoding in ETH
 
 **This is a toy implementation just for fun. DO NOT USE IT IN PRODUCTION**
 
-**There is no deserializer. Because I'm lazy**
+**This works only if the order when visiting struct fields is guaranteed by serde, i.e. when serde accesses struct fields with the same order when serializing and deserializing.**
 
 ### Installation
 
 Do not use it, use https://crates.io/crates/rlp instead.
+
+If you really want to use it, please create an issue.
 
 ### Usage
 
