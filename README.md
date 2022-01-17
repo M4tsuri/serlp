@@ -72,7 +72,8 @@ For example, the structure in example code, can be internally treated as the fol
 
 ```
 [
-    "This is a tooooooooooooo loooooooooooooooooooong tag", [
+    "This is a tooooooooooooo loooooooooooooooooooong tag", 
+    [
         114514, 
         [191, -9810], 
         [
