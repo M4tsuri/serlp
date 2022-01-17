@@ -9,6 +9,7 @@ readme = "README.md"
 keywords = ["eth", "RLP", "serde", "serialize"]
 categories = ["encoding"]
 authors = ["M4tsuri <me@m4tsuri.com>"]
+rust-version = "1.57"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
