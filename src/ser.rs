@@ -1,4 +1,4 @@
-use serde::{ser, Serialize};
+use serde::{ser::{self, SerializeTuple}, Serialize};
 use crate::error::{Error, Result};
 use paste::paste;
 
@@ -125,7 +125,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     /// I don't know what is it, so I serialize it
-    fn serialize_some<T>(self, value: &T) -> Result<()>
+    fn serialize_some<T>(self, _value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -134,8 +134,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     /// There is nothing
     /// So what is the difference between (), (()), None, "" and []
+    /// unit is an empty tuple
     fn serialize_unit(self) -> Result<()> {
-        Ok(())
+        let unit = self.serialize_tuple(0)?;
+        unit.end()
     }
 
     /// Another Nothing 
