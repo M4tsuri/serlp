@@ -3,8 +3,8 @@
 ### Cargo.toml
 
 ```
-serlp = 0.1.0
-serde = { version = "1.0.133", features = ['derive'] }
+serlp = "0.1"
+serde = { version = "1.0", features = ['derive'] }
 ```
 
 ### Not Supported Types 
@@ -18,7 +18,7 @@ serde = { version = "1.0.133", features = ['derive'] }
 You can find more examples [here](https://github.com/M4tsuri/serlp/tree/main/example)
 
 ```rust
-use serde_rlp::{de::from_bytes, ser::to_bytes};
+use serlp::{de::from_bytes, ser::to_bytes};
 use serde::{Serialize, Deserialize};
 use serde_bytes;
 
