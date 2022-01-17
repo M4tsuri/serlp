@@ -1,30 +1,83 @@
-## A toy (de)serializer for RLP encoding in ETH
+## A (de)serializer for RLP encoding in ETH
 
-**This is a toy implementation just for fun. DO NOT USE IT IN PRODUCTION**
+### Cargo.toml
 
-**This works only if the order when visiting struct fields is guaranteed by serde, i.e. when serde accesses struct fields with the same order when serializing and deserializing.**
+```
+serde_rlp = 0.1.0
+serde = { version = "1.0.133", features = ['derive'] }
+```
 
-### Installation
+### Not Supportted Types 
 
-Do not use it, use https://crates.io/crates/rlp instead.
+- bool
+- float numbers
+- enum
 
-If you really want to use it, please create an issue.
-
-### Usage
-
-See tests, for example (https://eth.wiki/fundamentals/rlp):
+### Example code
 
 ```rust
-    #[test]
-    fn test_set_theoretic_definition() {
-        // [ [], [[]], [ [], [[]] ] ]
-        #[derive(Serialize)]
-        struct Three<T>(T);
+use serde_rlp::{de::from_bytes, ser::to_bytes};
+use serde::{Serialize, Deserialize};
+use serde_bytes;
 
-        let three = Three(vec![vec![], vec![vec![]], vec![vec![], vec![vec![0_u8; 0]]]]);
+#[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
+struct Third<T> {
+    inner: T
+}
 
-        let three_expected = [0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0];
-        assert_eq!(to_bytes(&three).unwrap(), three_expected)
-    }
+#[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
+struct Embeding<'a> {
+    tag: &'a str,
+    ed: Embedded,
+    #[serde(with = "serde_bytes")]
+    bytes: Vec<u8>
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
+struct Embedded {
+    time: u64,
+    out: (u8, i32),
+    three: Third<((), ((),), ((), ((),)))>
+}
+
+fn main() {
+    let embed = Embeding {
+        tag: "This is a tooooooooooooo loooooooooooooooooooong tag",
+        ed: Embedded {
+            time: 114514,
+            out: (191, -9810),
+            three: Third {
+                inner: ((), ((),), ((), ((),)))
+            }
+        },
+        bytes: "哼.啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊".as_bytes().to_vec()
+    };
+
+    let encode = to_bytes(&embed).unwrap();
+    let origin: Embeding = from_bytes(&encode).unwrap();
+
+    println!("encode result: {:?}", encode);
+
+    assert_eq!(origin, embed);
+}
+```
+
+### Design principle
+
+Accroding to the ETH Yellow Paper, all supported data structure can be represented with either recursive list of byte arrays $\mathbb{L}$ or byte arrays $\mathbb{B}$. So we can transform all Rust's compound types, for example, tuple, struct and list, into lists. And then encode them as exactly described in the paper
+
+For example, the structure in example code, can be internally treated as the following form:
+
+```
+[
+    "This is a tooooooooooooo loooooooooooooooooooong tag", [
+        114514, 
+        [191, -9810], 
+        [
+            [[], [[]], [[], [[]]]]
+        ]
+    ], 
+    "哼.啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊"
+]
 ```
 
