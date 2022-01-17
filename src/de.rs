@@ -194,8 +194,8 @@ macro_rules! impl_deseralize_integer {
     }
 }
 
-/// We must make sure 'a is valid whenever 'de is valid
-impl<'de, 'a: 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+/// We must make sure 'de outlives
+impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
     impl_deseralize_not_supported! {any, bool, f32, f64, identifier, ignored_any, map}
@@ -304,6 +304,7 @@ impl<'de, 'a: 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // lifetime is 'a
         visitor.visit_seq(self)
     }
 
@@ -367,7 +368,7 @@ impl<'de, 'a: 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'de: 'a, 'a> SeqAccess<'de> for Deserializer<'a> {
+impl<'de: 'a, 'a> SeqAccess<'de> for Deserializer<'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
