@@ -7,7 +7,7 @@ serlp = 0.1.0
 serde = { version = "1.0.133", features = ['derive'] }
 ```
 
-### Not Supportted Types 
+### Not Supported Types 
 
 - bool
 - float numbers
