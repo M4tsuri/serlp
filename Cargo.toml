@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2021"
 license = "GPL-3.0"
 description = "A serde serializer and deserializer for RLP (Recursive Length Prefix) encoding."
-repository = "https://github.com/M4tsuri/serde_rlp"
+repository = "https://github.com/M4tsuri/serlp"
 readme = "README.md"
 keywords = ["eth", "RLP", "serde", "serialize"]
 categories = ["encoding"]
@@ -16,5 +16,7 @@ rust-version = "1.57"
 [dependencies]
 serde = { version = "1.0.133", features = ['derive'] }
 paste = "1.0"
-serde_bytes = "0.11"
 byteorder = "1.4.3"
+
+[dev-dependencies]
+serde_bytes = "0.11"
