@@ -1,3 +1,5 @@
+#![feature(let_else)]
+
 pub mod ser;
 pub mod error;
 pub mod de;
@@ -6,16 +8,15 @@ pub use serde_bytes;
 
 #[cfg(test)]
 mod test {
-    use std::vec;
-
-    use serde::Serialize;
+    use serde::{Serialize, Deserialize};
     use serde_bytes::Bytes;
 
     use crate::ser::to_bytes;
+    use crate::de::from_bytes;
 
     #[test]
     fn test_long_string() {
-        #[derive(Serialize)]
+        #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
         struct LongStr<'a>(&'a str);
 
         let long_str = LongStr("Lorem ipsum dolor sit amet, consectetur adipisicing elit");
@@ -23,7 +24,10 @@ mod test {
             .into_iter()
             .chain(long_str.0.as_bytes().to_owned())
             .collect();
-        assert_eq!(to_bytes(&long_str).unwrap(), expected)
+        
+        let origin: LongStr = from_bytes(&expected).unwrap();
+        assert_eq!(to_bytes(&long_str).unwrap(), expected);
+        assert_eq!(long_str, origin);
     }
 
     #[test]
@@ -32,7 +36,7 @@ mod test {
         #[derive(Serialize)]
         struct Three<T>(T);
 
-        let three = Three(vec![vec![], vec![vec![]], vec![vec![], vec![vec![0_u8; 0]]]]);
+        let three = Three(((), ((),), ((), ((),))));
 
         let three_expected = [0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0];
         assert_eq!(to_bytes(&three).unwrap(), three_expected)
