@@ -25,6 +25,7 @@ pub enum Error {
     UnknownSeqLength,
     TypeNotSupported,
     TrailingCharacters,
+    MalformedData
 }
 
 impl ser::Error for Error {
@@ -46,7 +47,8 @@ impl Display for Error {
             Error::Eof => formatter.write_str("unexpected end of input"),
             Error::TrailingCharacters => formatter.write_str("unexpected trailing characters"),
             Error::TypeNotSupported => formatter.write_str("Type is not supported as it not documented in the yellow paper."),
-            Error::UnknownSeqLength => formatter.write_str("Sequence lenght must be known at compile time.")
+            Error::UnknownSeqLength => formatter.write_str("Sequence lenght must be known at compile time."),
+            Error::MalformedData => formatter.write_str("RLP encoded data is malformed.")
         }
     }
 }
