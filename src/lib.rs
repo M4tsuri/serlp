@@ -2,8 +2,6 @@ pub mod ser;
 pub mod error;
 pub mod de;
 
-pub use serde_bytes;
-
 #[cfg(test)]
 mod test {
     use serde::{Serialize, Deserialize};
