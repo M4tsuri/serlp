@@ -1,8 +1,8 @@
 [package]
 name = "serlp"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
-license-file = "LICENSE"
+license = "GPL-3.0"
 description = "A serde serializer and deserializer for RLP (Recursive Length Prefix) encoding."
 repository = "https://github.com/M4tsuri/serde_rlp"
 readme = "README.md"
