@@ -8,6 +8,6 @@ edition = "2021"
 
 [dependencies]
 
-serde_rlp = { git = "https://github.com/M4tsuri/serde_rlp", branch = "main" }
+serlp = 0.1.0
 serde = { version = "1.0.133", features = ['derive'] }
 serde_bytes = "0.11"

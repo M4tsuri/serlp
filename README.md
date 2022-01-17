@@ -3,7 +3,7 @@
 ### Cargo.toml
 
 ```
-serde_rlp = 0.1.0
+serlp = 0.1.0
 serde = { version = "1.0.133", features = ['derive'] }
 ```
 
@@ -15,7 +15,7 @@ serde = { version = "1.0.133", features = ['derive'] }
 
 ### Example code
 
-You can find more examples [here](https://github.com/M4tsuri/serde_rlp/tree/main/example)
+You can find more examples [here](https://github.com/M4tsuri/serlp/tree/main/example)
 
 ```rust
 use serde_rlp::{de::from_bytes, ser::to_bytes};
