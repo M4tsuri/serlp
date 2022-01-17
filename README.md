@@ -66,7 +66,7 @@ fn main() {
 
 ### Design principle
 
-Accroding to the ETH Yellow Paper, all supported data structure can be represented with either recursive list of byte arrays $\mathbb{L}$ or byte arrays $\mathbb{B}$. So we can transform all Rust's compound types, for example, tuple, struct and list, into lists. And then encode them as exactly described in the paper
+Accroding to the ETH Yellow Paper, all supported data structure can be represented with either recursive list of byte arrays ![](https://latex.codecogs.com/svg.latex?\mathbb{L}) or byte arrays ![](https://latex.codecogs.com/svg.latex?\mathbb{B}). So we can transform all Rust's compound types, for example, tuple, struct and list, into lists. And then encode them as exactly described in the paper
 
 For example, the structure in example code, can be internally treated as the following form:
 
