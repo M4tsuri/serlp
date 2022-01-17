@@ -1,21 +1,22 @@
 use std::collections::VecDeque;
 use serde::Deserialize;
 use serde::de::{
-    self, DeserializeSeed, SeqAccess, Visitor,
+    self, DeserializeSeed, SeqAccess, Visitor, MapAccess,
 };
 use byteorder::{BigEndian, ReadBytesExt};
 
 use crate::error::{Error, Result};
 use paste::paste;
 
-enum RLPNode<'a> {
-    Bytes(&'a [u8]),
-    Compound(VecDeque<RLPNode<'a>>)
+#[derive(Debug)]
+enum RLPNode<'de> {
+    Bytes(&'de [u8]),
+    Compound(VecDeque<RLPNode<'de>>)
 }
 
-impl<'a> RLPNode<'a> {
+impl<'de> RLPNode<'de> {
     /// parse a single node
-    fn parse_node(buf: &'a [u8]) -> Result<(RLPNode, &'a [u8])> {
+    fn parse_node(buf: &'de [u8]) -> Result<(RLPNode, &'de [u8])> {
         match buf[0] {
             0..=191 => Self::extract_bytes(buf),
             // Compound type
@@ -23,7 +24,7 @@ impl<'a> RLPNode<'a> {
         }
     }
 
-    fn extract_bytes(buf: &'a [u8]) -> Result<(RLPNode, &'a [u8])> {
+    fn extract_bytes(buf: &'de [u8]) -> Result<(RLPNode, &'de [u8])> {
         Ok(match buf[0] {
             // R_b(x): ||x|| = 1 \land x[0] \lt 128
             0..=127 => (RLPNode::Bytes(&buf[..1]), &buf[1..]),
@@ -44,7 +45,7 @@ impl<'a> RLPNode<'a> {
         })
     }
 
-    fn extract_seq(buf: &'a [u8]) -> Result<(RLPNode, &'a [u8])> {
+    fn extract_seq(buf: &'de [u8]) -> Result<(RLPNode, &'de [u8])> {
         let (mut buf, remained) = match buf[0] {
             // (192 + ||s(x)||) \dot s(x)
             len @ 192..=247 => {
@@ -73,7 +74,7 @@ impl<'a> RLPNode<'a> {
         Ok((RLPNode::Compound(seq), remained))
     }
 
-    fn from_bytes(buf: &'a [u8]) -> Result<Self> {
+    fn from_bytes(buf: &'de [u8]) -> Result<Self> {
         if buf.is_empty() {
             return Err(Error::MalformedData)
         }
@@ -86,9 +87,16 @@ impl<'a> RLPNode<'a> {
     }
 }
 
+#[derive(Debug)]
 struct RLPTree<'de> {
     /// the max capicity of this node is 1, we only use VecDeque for consistency
-    root: VecDeque<RLPNode<'de>>
+    root: RLPNode<'de>
+}
+
+enum TraverseRLP<'de> {
+    Found(&'de [u8]),
+    Leave(&'de [u8]),
+    Empty
 }
 
 impl<'de> RLPTree<'de> {
@@ -96,31 +104,49 @@ impl<'de> RLPTree<'de> {
         let mut queue = VecDeque::with_capacity(1);
         queue.push_back(RLPNode::from_bytes(buf)?);
         Ok(Self {
-            root: queue
+            root: RLPNode::Compound(queue)
         })
+    }
+
+    fn pop_front_deep(node: Option<&mut RLPNode<'de>>) -> TraverseRLP<'de> {
+        match node {
+            Some(&mut RLPNode::Bytes(bytes)) => TraverseRLP::Leave(bytes),
+            Some(RLPNode::Compound(compound)) => {
+                loop {
+                    match Self::pop_front_deep(compound.front_mut()) {
+                        TraverseRLP::Empty => {
+                            if !compound.is_empty() {
+                                // the first subtree is empty, check the next one
+                                compound.pop_front().unwrap();
+                                continue;
+                            }
+                            // this tree is empty, we tell the upper frame to delete it
+                            return TraverseRLP::Empty
+                        },
+                        // we found a valid leave, just remove it from the tree
+                        TraverseRLP::Leave(bytes) => {
+                            compound.pop_front().unwrap();
+                            return TraverseRLP::Found(bytes)
+                        },
+                        TraverseRLP::Found(bytes) => {
+                            return TraverseRLP::Found(bytes)
+                        }
+                    }
+                }
+            },
+            // this tree is empty, the upper frame will delete it
+            None => TraverseRLP::Empty
+
+        }
     }
 
     /// get the next value 
     fn next(&mut self) -> Option<&'de [u8]> {
-        let mut root = &mut self.root;
-        loop {
-            match root.front() {
-                Some(RLPNode::Bytes(_)) => {
-                    let RLPNode::Bytes(bytes) = root.pop_front().unwrap() else {
-                        unreachable!()
-                    };
-                    return Some(bytes)
-                }
-                Some(RLPNode::Compound(_)) => {
-                    let RLPNode::Compound(compound) = root.front_mut().unwrap() else {
-                        unreachable!()
-                    };
-                    root = compound;
-                }
-                None => return None
-            }
+        match Self::pop_front_deep(Some(&mut self.root)) {
+            TraverseRLP::Found(bytes) => Some(bytes),
+            // getting a Leave is impossible because we wrapped the root in a VecDeque
+            _ => None
         }
-        
     }   
 }
 
@@ -249,15 +275,15 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_bytes(self.tree.next()
+        visitor.visit_borrowed_bytes(self.tree.next()
             .ok_or(Error::MalformedData)?)
     }
 
-    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        self.deserialize_bytes(visitor)
     }
     
     fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
@@ -310,7 +336,7 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         // lifetime is 'a
         // unimplemented!()
-        visitor.visit_seq(DeSeq {de: self})
+        visitor.visit_seq(CompoundAccess::new(self))
     }
 
     // Tuples look just like sequences in JSON. Some formats may be able to
@@ -349,13 +375,12 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self,
         _name: &'static str,
         _fields: &'static [&'static str],
-        _visitor: V,
+        visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
-        // visitor.visit_map(self)
+        visitor.visit_seq(CompoundAccess::new(self))
     }
 
     fn deserialize_enum<V>(
@@ -372,14 +397,22 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 }
 
 
-struct DeSeq<'a, 'de: 'a> {
+struct CompoundAccess<'a, 'de: 'a> {
     de: &'a mut Deserializer<'de>,
+}
+
+impl<'a, 'de> CompoundAccess<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>) -> Self {
+        Self {
+            de
+        }
+    }
 }
 
 
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'de, 'a> SeqAccess<'de> for DeSeq<'a, 'de> {
+impl<'de, 'a> SeqAccess<'de> for CompoundAccess<'a, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -388,5 +421,23 @@ impl<'de, 'a> SeqAccess<'de> for DeSeq<'a, 'de> {
     {
         // Deserialize an array element.
         seed.deserialize(&mut *self.de).map(Some)
+    }
+}
+
+impl<'de, 'a> MapAccess<'de> for CompoundAccess<'a, 'de> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>>
+    where
+        K: DeserializeSeed<'de> 
+    {
+        Ok(None)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+    where
+        V: DeserializeSeed<'de> 
+    {
+        seed.deserialize(&mut *self.de)
     }
 }
