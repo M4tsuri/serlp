@@ -1,0 +1,13 @@
+[package]
+name = "complex_struct"
+version = "0.1.0"
+edition = "2021"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+serde_rlp = { git = "https://github.com/M4tsuri/serde_rlp", branch = "main" }
+serde = { version = "1.0.133", features = ['derive'] }
+serde_bytes = "0.11"
