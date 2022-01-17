@@ -65,9 +65,9 @@ impl<'de> RLPNode<'de> {
 
         // now buf is the inner data
         let mut seq = VecDeque::new();
-        let mut node;
         while buf.len() != 0 {
-            (node, buf) = Self::parse_node(buf)?;
+            let (node, remained) = Self::parse_node(buf)?;
+            buf = remained;
             seq.push_back(node);
         }
 
