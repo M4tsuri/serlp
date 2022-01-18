@@ -14,7 +14,7 @@ serde = { version = "1.0", features = ['derive'] }
 - maps
 - enum (only deserialize)
 
-We do not support enum when deserializing because we lost some information (i.e. variant inde) about the original value when serializing.
+We do not support enum when deserializing because we lost some information (i.e. variant index) about the original value when serializing.
 
 We have to choose this approach because there is no enums in Golang while ETH is written in go. Treating enums as a transparent layer can make our furture implementation compatiable with ETH.
 
