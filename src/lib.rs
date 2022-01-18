@@ -137,6 +137,104 @@ mod test {
     }
 
     #[test]
+    fn test_simple_enum() {
+        #[derive(Serialize, Debug, PartialEq, Eq)]
+        enum Simple {
+            Empty,
+            Int(u32)
+        }
+
+        #[derive(Serialize, Debug, PartialEq, Eq)]
+        struct Equiv(u32);
+
+        let simple_enum = Simple::Int(114514);
+        let unit_variant = Simple::Empty;
+        let equiv = Equiv(114514);
+
+        let enum_res = to_bytes(&simple_enum).unwrap();
+        let empty_res = to_bytes(&unit_variant).unwrap();
+        let struct_res = to_bytes(&equiv).unwrap();
+
+        assert_eq!(enum_res, struct_res);
+        assert_eq!(empty_res, []);
+    }
+
+    #[test]
+    fn test_variant_tuple() {
+        #[derive(Serialize, Debug, PartialEq, Eq)]
+        enum Simple {
+            Empty,
+            Int((u32, u64))
+        }
+
+        #[derive(Serialize, Debug, PartialEq, Eq)]
+        struct Equiv((u32, u64));
+
+        let simple_enum = Simple::Int((114514, 1919810));
+        let unit_variant = Simple::Empty;
+        let equiv = Equiv((114514, 1919810));
+
+        let enum_res = to_bytes(&simple_enum).unwrap();
+        let empty_res = to_bytes(&unit_variant).unwrap();
+        let struct_res = to_bytes(&equiv).unwrap();
+
+        assert_eq!(enum_res, struct_res);
+        assert_eq!(empty_res, []);
+    }
+
+    #[test]
+    fn test_variant_struct() {
+        #[derive(Serialize, Debug, PartialEq, Eq, Deserialize, Clone)]
+        struct Third<T> {
+            inner: T
+        }
+        #[derive(Serialize, Debug, PartialEq, Eq, Deserialize, Clone)]
+        struct Embeding<'a> {
+            tag: &'a str,
+            ed: Embedded,
+            #[serde(with = "serde_bytes")]
+            bytes: Vec<u8>
+        }
+        #[derive(Serialize, Debug, PartialEq, Eq, Deserialize, Clone)]
+        struct Embedded {
+            time: u64,
+            out: (u8, i32),
+            three: Third<((), ((),), ((), ((),)))>
+        }
+
+        #[derive(Serialize, Debug, PartialEq, Eq)]
+        enum Simple<'a> {
+            #[allow(dead_code)]
+            Empty,
+            #[allow(dead_code)]
+            Int((u32, u64, Embedded)),
+            Struct(Embeding<'a>)
+        }
+
+        #[derive(Serialize, Debug, PartialEq, Eq)]
+        struct Equiv((u32, u64));
+
+        let embed = Embeding {
+            tag: "This is a tooooooooooooo loooooooooooooooooooong tag",
+            ed: Embedded {
+                time: 114514,
+                out: (191, -9810),
+                three: Third {
+                    inner: ((), ((),), ((), ((),)))
+                }
+            },
+            bytes: "哼.啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊".as_bytes().to_vec()
+        };
+
+        let simple_enum = Simple::Struct(embed.clone());
+
+        let simple_res = to_bytes(&simple_enum).unwrap();
+        let struct_res = to_bytes(&embed).unwrap();
+
+        assert_eq!(simple_res, struct_res);
+    }
+
+    #[test]
     fn test_embedded_struct() {
         #[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
         struct Third<T> {

@@ -120,39 +120,45 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     /// nothing
     /// So what is the difference between (), (()), None, "" and []
+    /// none just means nothing, it not even an empty list
     fn serialize_none(self) -> Result<()> {
-        Err(Error::TypeNotSupported)
+        Ok(())
     }
 
-    /// I don't know what is it, so I serialize it
-    fn serialize_some<T>(self, _value: &T) -> Result<()>
+    fn serialize_some<T>(self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        Err(Error::TypeNotSupported)
+        value.serialize(self)
     }
 
-    /// There is nothing
-    /// So what is the difference between (), (()), None, "" and []
-    /// unit is an empty tuple
+    /// unit is an empty tuple.
+    /// In our design principle, an empty tuple is an empty list.
+    /// So it should be encoded.
     fn serialize_unit(self) -> Result<()> {
         let unit = self.serialize_tuple(0)?;
         unit.end()
     }
 
-    /// Another Nothing 
+    /// unit struct in NOT even an empty tuple.
+    /// It's just a mark. So we serialize it as none.
     fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
-        self.serialize_unit()
+        self.serialize_none()
     }
 
-    /// MORE NOTHING
+    /// Note we are **LOSING** information here.
+    /// We dropped the variant index of this enum so you cannot
+    /// deserialize it.
+    /// We have to choose this method because there is no enums in Golang 
+    /// but eth is written in go. Treating enums as a transparent layer 
+    /// can make our furture implementation compatiable with ETH.
     fn serialize_unit_variant(
         self,
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
     ) -> Result<()> {
-        Err(Error::TypeNotSupported)
+        self.serialize_none()
     }
 
     /// This is TRANSPARENT!
@@ -174,12 +180,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-        _value: &T,
+        value: &T,
     ) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        Err(Error::TypeNotSupported)
+        value.serialize(self)
     }
 
     /// serialize a sequence, the sequence will be parsed recursively
@@ -207,9 +213,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        Err(Error::TypeNotSupported)
+        self.serialize_tuple(len)
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
@@ -228,12 +234,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_struct_variant(
         self,
-        _name: &'static str,
+        name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        Err(Error::TypeNotSupported)
+        self.serialize_struct(name, len)
     }
 }
 
@@ -309,48 +315,30 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, _value: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        Err(Error::TypeNotSupported)
+        value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<()> {
-        Err(Error::TypeNotSupported)
+        self.frame_return();
+        Ok(())
     }
 }
 
-// Some `Serialize` types are not able to hold a key and value in memory at the
-// same time so `SerializeMap` implementations are required to support
-// `serialize_key` and `serialize_value` individually.
-//
-// There is a third optional method on the `SerializeMap` trait. The
-// `serialize_entry` method allows serializers to optimize for the case where
-// key and value are both available simultaneously. In JSON it doesn't make a
-// difference so the default behavior for `serialize_entry` is fine.
 impl<'a> ser::SerializeMap for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    // The Serde data model allows map keys to be any serializable type. JSON
-    // only allows string keys so the implementation below will produce invalid
-    // JSON if the key serializes as something other than a string.
-    //
-    // A real JSON serializer would need to validate that map keys are strings.
-    // This can be done by using a different Serializer to serialize the key
-    // (instead of `&mut **self`) and having that other serializer only
-    // implement `serialize_str` and return an error on any other data type.
     fn serialize_key<T>(&mut self, _key: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
         Err(Error::TypeNotSupported)
     }
-
-    // It doesn't make a difference whether the colon is printed at the end of
-    // `serialize_key` or at the beginning of `serialize_value`. In this case
-    // the code is a bit simpler having it here.
+    
     fn serialize_value<T>(&mut self, _value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
@@ -414,16 +402,17 @@ impl Serializer {
 impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
-
-    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<()>
+    
+    fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        Err(Error::TypeNotSupported)
+        value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<()> {
-        Err(Error::TypeNotSupported)
+        self.frame_return();
+        Ok(())
     }
 }
 

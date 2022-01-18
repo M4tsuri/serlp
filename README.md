@@ -3,7 +3,7 @@
 ### Cargo.toml
 
 ```
-serlp = "0.1"
+serlp = "0.1.3"
 serde = { version = "1.0", features = ['derive'] }
 ```
 
@@ -11,7 +11,12 @@ serde = { version = "1.0", features = ['derive'] }
 
 - bool
 - float numbers
-- enum
+- maps
+- enum (only deserialize)
+
+We do not support enum when deserializing because we lost some information (i.e. variant inde) about the original value when serializing.
+
+We have to choose this approach because there is no enums in Golang while ETH is written in go. Treating enums as a transparent layer can make our furture implementation compatiable with ETH.
 
 ### Example code
 
