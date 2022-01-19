@@ -1,4 +1,4 @@
-use serlp::{de::from_bytes, ser::to_bytes};
+use serlp::rlp::{from_bytes, to_bytes, RlpTree};
 use serde::{Serialize, Deserialize};
 use serde_bytes;
 
@@ -36,8 +36,9 @@ fn main() {
 
     let encode = to_bytes(&embed).unwrap();
     let origin: Embeding = from_bytes(&encode).unwrap();
+    let tree = RlpTree::new(&encode).unwrap();
 
+    println!("original type has {} values.", tree.value_count());
     println!("encode result: {:?}", encode);
-
     assert_eq!(origin, embed);
 }

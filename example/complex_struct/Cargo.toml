@@ -7,6 +7,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serlp = {  }
+serlp = { git = "https://github.com/M4tsuri/serlp" }
 serde = { version = "1.0.133", features = ['derive'] }
 serde_bytes = "0.11"
