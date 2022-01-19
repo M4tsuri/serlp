@@ -3,7 +3,7 @@
 ### Cargo.toml
 
 ```
-serlp = "0.1.3"
+serlp = "0.1.4"
 serde = { version = "1.0", features = ['derive'] }
 ```
 

@@ -163,10 +163,8 @@ pub struct Deserializer<'de> {
 }
 
 impl<'de> Deserializer<'de> {
-    // By convention, `Deserializer` constructors are named like `from_xyz`.
-    // That way basic use cases are satisfied by something like
-    // `serde_json::from_str(...)` while advanced use cases that require a
-    // deserializer can make one with `serde_json::Deserializer::from_str(...)`.
+    /// Create a deserializer instance from a byte slice, this will covert 
+    /// the slice into a tree and store it.
     pub fn new(input: &'de [u8]) -> Result<Self> {
         let mut tree = RLPTree::new();
         tree.from_bytes(input)?;
@@ -175,16 +173,32 @@ impl<'de> Deserializer<'de> {
         })
     }
 
+    /// Each tree contains a `value_count` field. This value initially 
+    /// represents the number of fields of the original type and decrements during 
+    /// deserialization. 
+    /// 
+    /// This field is useful because sometime it can help you distinguish 
+    /// different variant members when implementing your own Deserialize trait for 
+    /// specific variant type. 
+    /// 
+    /// For example, here is a Golang correnpondence in the source code of ETH:
+    /// 
+    /// <https://github.com/ethereum/go-ethereum/blob/7dec26db2abcb062e676fd4972abc1d282ac3ced/trie/node.go#L117>
+    /// 
     pub fn value_count(&self) -> usize {
         self.tree.value_count
     }
 }
 
-// By convention, the public API of a Serde deserializer is one or more
-// `from_xyz` methods such as `from_str`, `from_bytes`, or `from_reader`
-// depending on what Rust types the deserializer is able to consume as input.
-//
-// This basic deserializer supports only `from_str`.
+/// This function deserialize a byte slice into a type.
+/// It works by construct a tree from the RLP encoded slice.
+/// When serde is deserializing each field, it will call the corresponding
+/// deserialize method, thus pops an element from the tree and decode it.
+/// A potential problem is the standard RLP encoding is not capable to 
+/// enocde all Rust types, for example, variants. So you may need to implement 
+/// your own deserialize trait for some variant types when nessessary.
+/// This function returns `Error::MalformedData` when the input is not 
+/// valid RLP encoded bytes.
 pub fn from_bytes<'a, T>(s: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,

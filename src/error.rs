@@ -17,14 +17,8 @@ pub enum Error {
     // Deserialize impl for a struct may return an error because a required
     // field is missing.
     Message(String),
-
-    // Zero or more variants that can be created directly by the Serializer and
-    // Deserializer without going through `ser::Error` and `de::Error`. These
-    // are specific to the format, in this case JSON.
-    Eof,
     UnknownSeqLength,
     TypeNotSupported,
-    TrailingCharacters,
     MalformedData
 }
 
@@ -44,8 +38,6 @@ impl Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::Message(msg) => formatter.write_str(msg),
-            Error::Eof => formatter.write_str("unexpected end of input"),
-            Error::TrailingCharacters => formatter.write_str("unexpected trailing characters"),
             Error::TypeNotSupported => formatter.write_str("Type is not supported as it not documented in the yellow paper."),
             Error::UnknownSeqLength => formatter.write_str("Sequence lenght must be known at compile time."),
             Error::MalformedData => formatter.write_str("RLP encoded data is malformed.")
