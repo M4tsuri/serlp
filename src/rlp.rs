@@ -100,7 +100,7 @@ impl<'de> RlpTree<'de> {
     }
 
     /// initialize the tree with a RLP encoded buffer
-    pub fn from_bytes(&mut self, buf: &'de [u8]) -> Result<()> {
+    pub fn build(&mut self, buf: &'de [u8]) -> Result<()> {
         if buf.is_empty() {
             return Err(Error::MalformedData)
         }
