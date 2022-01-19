@@ -15,10 +15,8 @@ impl<'de> Deserializer<'de> {
     /// Create a deserializer instance from a byte slice, this will covert 
     /// the slice into a tree and store it.
     pub fn new(input: &'de [u8]) -> Result<Self> {
-        let mut tree = RlpTree::new();
-        tree.from_bytes(input)?;
         Ok(Self { 
-            tree
+            tree: RlpTree::new(input)?
         })
     }
 

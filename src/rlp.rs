@@ -92,26 +92,22 @@ enum TraverseRlp<'de> {
 }
 
 impl<'de> RlpTree<'de> {
-    pub fn new() -> Self {
-        Self {
-            root: RlpNode::Compound(VecDeque::with_capacity(1)),
-            value_count: 0
-        }
-    }
-
-    /// initialize the tree with a RLP encoded buffer
-    pub fn build(&mut self, buf: &'de [u8]) -> Result<()> {
+    pub fn new(buf: &'de [u8]) -> Result<Self> {
         if buf.is_empty() {
             return Err(Error::MalformedData)
         }
-        let (root, remained) = Self::parse_node(&mut self.value_count, buf)?;
+        let mut root = VecDeque::with_capacity(1);
+        let mut value_count = 0;
+
+        let (tree, remained) = Self::parse_node(&mut value_count, buf)?;
+        root.push_back(tree);
         if !remained.is_empty() {
             Err(Error::MalformedData)
         } else {
-            if let RlpNode::Compound(queue) = &mut self.root {
-                queue.push_back(root)
-            }
-            Ok(())
+            Ok(Self {
+                root: RlpNode::Compound(root),
+                value_count
+            })
         }
     }
 
