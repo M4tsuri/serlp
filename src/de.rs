@@ -14,17 +14,55 @@ enum RLPNode<'de> {
     Compound(VecDeque<RLPNode<'de>>)
 }
 
-impl<'de> RLPNode<'de> {
-    /// parse a single node
-    fn parse_node(buf: &'de [u8]) -> Result<(RLPNode, &'de [u8])> {
-        match buf[0] {
-            0..=191 => Self::extract_bytes(buf),
-            // Compound type
-            192..=255 => Self::extract_seq(buf)
+#[derive(Debug)]
+struct RLPTree<'de> {
+    /// the max capicity of this node is 1, we only use VecDeque for consistency
+    root: RLPNode<'de>,
+    value_count: usize
+}
+
+enum TraverseRLP<'de> {
+    Found(&'de [u8]),
+    Leave(&'de [u8]),
+    Empty
+}
+
+impl<'de> RLPTree<'de> {
+    fn new() -> Self {
+        Self {
+            root: RLPNode::Compound(VecDeque::with_capacity(1)),
+            value_count: 0
         }
     }
 
-    fn extract_bytes(buf: &'de [u8]) -> Result<(RLPNode, &'de [u8])> {
+    fn from_bytes(&mut self, buf: &'de [u8]) -> Result<()> {
+        if buf.is_empty() {
+            return Err(Error::MalformedData)
+        }
+        let (root, remained) = Self::parse_node(&mut self.value_count, buf)?;
+        if !remained.is_empty() {
+            Err(Error::MalformedData)
+        } else {
+            if let RLPNode::Compound(queue) = &mut self.root {
+                queue.push_back(root)
+            }
+            Ok(())
+        }
+    }
+
+        /// parse a single node
+    fn parse_node(counter: &mut usize, buf: &'de [u8]) -> Result<(RLPNode<'de>, &'de [u8])> {
+        match buf[0] {
+            0..=191 => {
+                *counter += 1;
+                Self::extract_bytes(buf)
+            },
+            // Compound type
+            192..=255 => Self::extract_seq(counter, buf)
+        }
+    }
+
+    fn extract_bytes(buf: &'de [u8]) -> Result<(RLPNode<'de>, &'de [u8])> {
         Ok(match buf[0] {
             // R_b(x): ||x|| = 1 \land x[0] \lt 128
             0..=127 => (RLPNode::Bytes(&buf[..1]), &buf[1..]),
@@ -45,7 +83,7 @@ impl<'de> RLPNode<'de> {
         })
     }
 
-    fn extract_seq(buf: &'de [u8]) -> Result<(RLPNode, &'de [u8])> {
+    fn extract_seq(counter: &mut usize, buf: &'de [u8]) -> Result<(RLPNode<'de>, &'de [u8])> {
         let (mut buf, remained) = match buf[0] {
             // (192 + ||s(x)||) \dot s(x)
             len @ 192..=247 => {
@@ -66,46 +104,12 @@ impl<'de> RLPNode<'de> {
         // now buf is the inner data
         let mut seq = VecDeque::new();
         while buf.len() != 0 {
-            let (node, remained) = Self::parse_node(buf)?;
+            let (node, remained) = Self::parse_node(counter, buf)?;
             buf = remained;
             seq.push_back(node);
         }
 
         Ok((RLPNode::Compound(seq), remained))
-    }
-
-    fn from_bytes(buf: &'de [u8]) -> Result<Self> {
-        if buf.is_empty() {
-            return Err(Error::MalformedData)
-        }
-        let (root, remained) = Self::parse_node(buf)?;
-        if !remained.is_empty() {
-            Err(Error::MalformedData)
-        } else {
-            Ok(root)
-        }
-    }
-}
-
-#[derive(Debug)]
-struct RLPTree<'de> {
-    /// the max capicity of this node is 1, we only use VecDeque for consistency
-    root: RLPNode<'de>
-}
-
-enum TraverseRLP<'de> {
-    Found(&'de [u8]),
-    Leave(&'de [u8]),
-    Empty
-}
-
-impl<'de> RLPTree<'de> {
-    fn new(buf: &'de [u8]) -> Result<Self> {
-        let mut queue = VecDeque::with_capacity(1);
-        queue.push_back(RLPNode::from_bytes(buf)?);
-        Ok(Self {
-            root: RLPNode::Compound(queue)
-        })
     }
 
     fn pop_front_deep(node: Option<&mut RLPNode<'de>>) -> TraverseRLP<'de> {
@@ -142,12 +146,16 @@ impl<'de> RLPTree<'de> {
 
     /// get the next value 
     fn next(&mut self) -> Option<&'de [u8]> {
+        if self.value_count == 0 {
+            return None
+        }
+        self.value_count -= 1;
         match Self::pop_front_deep(Some(&mut self.root)) {
             TraverseRLP::Found(bytes) => Some(bytes),
             // getting a Leave is impossible because we wrapped the root in a VecDeque
-            _ => None
+            _ => unreachable!()
         }
-    }   
+    }
 }
 
 pub struct Deserializer<'de> {
@@ -160,9 +168,15 @@ impl<'de> Deserializer<'de> {
     // `serde_json::from_str(...)` while advanced use cases that require a
     // deserializer can make one with `serde_json::Deserializer::from_str(...)`.
     pub fn new(input: &'de [u8]) -> Result<Self> {
+        let mut tree = RLPTree::new();
+        tree.from_bytes(input)?;
         Ok(Deserializer { 
-            tree: RLPTree::new(input)?,
+            tree: tree
         })
+    }
+
+    pub fn value_count(&self) -> usize {
+        self.tree.value_count
     }
 }
 
