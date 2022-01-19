@@ -88,17 +88,18 @@
 //! ]
 //! ```
 
-pub mod ser;
+mod ser;
 pub mod error;
-pub mod de;
+mod de;
+pub mod rlp;
 
 #[cfg(test)]
 mod test {
     use serde::{Serialize, Deserialize};
     use serde_bytes::Bytes;
 
-    use crate::ser::to_bytes;
-    use crate::de::from_bytes;
+    use crate::rlp::to_bytes;
+    use crate::rlp::from_bytes;
 
     #[test]
     fn test_long_string() {

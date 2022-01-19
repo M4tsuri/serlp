@@ -1,211 +1,32 @@
-use std::collections::VecDeque;
-use serde::Deserialize;
 use serde::de::{
     self, DeserializeSeed, SeqAccess, Visitor, MapAccess,
 };
 use byteorder::{BigEndian, ReadBytesExt};
 
 use crate::error::{Error, Result};
+use crate::rlp::RlpTree;
 use paste::paste;
 
-#[derive(Debug)]
-enum RLPNode<'de> {
-    Bytes(&'de [u8]),
-    Compound(VecDeque<RLPNode<'de>>)
-}
-
-#[derive(Debug)]
-struct RLPTree<'de> {
-    /// the max capicity of this node is 1, we only use VecDeque for consistency
-    root: RLPNode<'de>,
-    value_count: usize
-}
-
-enum TraverseRLP<'de> {
-    Found(&'de [u8]),
-    Leave(&'de [u8]),
-    Empty
-}
-
-impl<'de> RLPTree<'de> {
-    fn new() -> Self {
-        Self {
-            root: RLPNode::Compound(VecDeque::with_capacity(1)),
-            value_count: 0
-        }
-    }
-
-    fn from_bytes(&mut self, buf: &'de [u8]) -> Result<()> {
-        if buf.is_empty() {
-            return Err(Error::MalformedData)
-        }
-        let (root, remained) = Self::parse_node(&mut self.value_count, buf)?;
-        if !remained.is_empty() {
-            Err(Error::MalformedData)
-        } else {
-            if let RLPNode::Compound(queue) = &mut self.root {
-                queue.push_back(root)
-            }
-            Ok(())
-        }
-    }
-
-        /// parse a single node
-    fn parse_node(counter: &mut usize, buf: &'de [u8]) -> Result<(RLPNode<'de>, &'de [u8])> {
-        match buf[0] {
-            0..=191 => {
-                *counter += 1;
-                Self::extract_bytes(buf)
-            },
-            // Compound type
-            192..=255 => Self::extract_seq(counter, buf)
-        }
-    }
-
-    fn extract_bytes(buf: &'de [u8]) -> Result<(RLPNode<'de>, &'de [u8])> {
-        Ok(match buf[0] {
-            // R_b(x): ||x|| = 1 \land x[0] \lt 128
-            0..=127 => (RLPNode::Bytes(&buf[..1]), &buf[1..]),
-            // (128 + ||x||) \dot x
-            len @ 128..=183 => {
-                let pivot = 1 + (len as usize - 128);
-                (RLPNode::Bytes(&buf[1..pivot]), &buf[pivot..])
-            }
-            // (183 + ||BE(||x||)||) \dot BE(||x||) \dot x
-            be_len @ 184..=191 => {
-                let be_len = be_len as usize - 183;
-                let len = (&buf[1..]).read_uint::<BigEndian>(be_len)
-                    .or(Err(Error::MalformedData))? as usize;
-                let pivot = 1 + be_len + len;
-                (RLPNode::Bytes(&buf[1 + be_len..pivot]), &buf[pivot..])
-            }, 
-            _ => unreachable!()  
-        })
-    }
-
-    fn extract_seq(counter: &mut usize, buf: &'de [u8]) -> Result<(RLPNode<'de>, &'de [u8])> {
-        let (mut buf, remained) = match buf[0] {
-            // (192 + ||s(x)||) \dot s(x)
-            len @ 192..=247 => {
-                let len = len as usize - 192;
-                let pivot = len + 1;
-                (&buf[1..pivot], &buf[pivot..])
-            },
-            be_len @ 248..=255 => {
-                let be_len = be_len as usize - 247;
-                let len = (&buf[1..]).read_uint::<BigEndian>(be_len)
-                    .or(Err(Error::MalformedData))? as usize;
-                let pivot = 1 + be_len + len;
-                (&buf[1 + be_len..pivot], &buf[pivot..])
-            },
-            _ => unreachable!()
-        };
-
-        // now buf is the inner data
-        let mut seq = VecDeque::new();
-        while buf.len() != 0 {
-            let (node, remained) = Self::parse_node(counter, buf)?;
-            buf = remained;
-            seq.push_back(node);
-        }
-
-        Ok((RLPNode::Compound(seq), remained))
-    }
-
-    fn pop_front_deep(node: Option<&mut RLPNode<'de>>) -> TraverseRLP<'de> {
-        match node {
-            Some(&mut RLPNode::Bytes(bytes)) => TraverseRLP::Leave(bytes),
-            Some(RLPNode::Compound(compound)) => {
-                loop {
-                    match Self::pop_front_deep(compound.front_mut()) {
-                        TraverseRLP::Empty => {
-                            if !compound.is_empty() {
-                                // the first subtree is empty, check the next one
-                                compound.pop_front().unwrap();
-                                continue;
-                            }
-                            // this tree is empty, we tell the upper frame to delete it
-                            return TraverseRLP::Empty
-                        },
-                        // we found a valid leave, just remove it from the tree
-                        TraverseRLP::Leave(bytes) => {
-                            compound.pop_front().unwrap();
-                            return TraverseRLP::Found(bytes)
-                        },
-                        TraverseRLP::Found(bytes) => {
-                            return TraverseRLP::Found(bytes)
-                        }
-                    }
-                }
-            },
-            // this tree is empty, the upper frame will delete it
-            None => TraverseRLP::Empty
-
-        }
-    }
-
-    /// get the next value 
-    fn next(&mut self) -> Option<&'de [u8]> {
-        if self.value_count == 0 {
-            return None
-        }
-        self.value_count -= 1;
-        match Self::pop_front_deep(Some(&mut self.root)) {
-            TraverseRLP::Found(bytes) => Some(bytes),
-            // getting a Leave is impossible because we wrapped the root in a VecDeque
-            _ => unreachable!()
-        }
-    }
-}
-
 pub struct Deserializer<'de> {
-    tree: RLPTree<'de>,
+    tree: RlpTree<'de>,
 }
 
 impl<'de> Deserializer<'de> {
     /// Create a deserializer instance from a byte slice, this will covert 
     /// the slice into a tree and store it.
     pub fn new(input: &'de [u8]) -> Result<Self> {
-        let mut tree = RLPTree::new();
+        let mut tree = RlpTree::new();
         tree.from_bytes(input)?;
-        Ok(Deserializer { 
-            tree: tree
+        Ok(Self { 
+            tree
         })
     }
 
-    /// Each tree contains a `value_count` field. This value initially 
-    /// represents the number of fields of the original type and decrements during 
-    /// deserialization. 
-    /// 
-    /// This field is useful because sometime it can help you distinguish 
-    /// different variant members when implementing your own Deserialize trait for 
-    /// specific variant type. 
-    /// 
-    /// For example, here is a Golang correnpondence in the source code of ETH:
-    /// 
-    /// <https://github.com/ethereum/go-ethereum/blob/7dec26db2abcb062e676fd4972abc1d282ac3ced/trie/node.go#L117>
-    /// 
-    pub fn value_count(&self) -> usize {
-        self.tree.value_count
+    pub fn with_rlp_tree(tree: RlpTree<'de>) -> Self {
+        Self {
+            tree
+        }
     }
-}
-
-/// This function deserialize a byte slice into a type.
-/// It works by construct a tree from the RLP encoded slice.
-/// When serde is deserializing each field, it will call the corresponding
-/// deserialize method, thus pops an element from the tree and decode it.
-/// A potential problem is the standard RLP encoding is not capable to 
-/// enocde all Rust types, for example, variants. So you may need to implement 
-/// your own deserialize trait for some variant types when nessessary.
-/// This function returns `Error::MalformedData` when the input is not 
-/// valid RLP encoded bytes.
-pub fn from_bytes<'a, T>(s: &'a [u8]) -> Result<T>
-where
-    T: Deserialize<'a>,
-{
-    let mut deserializer = Deserializer::new(s)?;
-    let t = T::deserialize(&mut deserializer)?;
-    Ok(t)
 }
 
 macro_rules! impl_deseralize_not_supported {

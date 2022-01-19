@@ -7,49 +7,25 @@ pub struct Serializer {
     stack: Vec<Vec<u8>>
 }
 
+impl Serializer {
+    pub fn to_bytes<T>(value: &T) -> Result<Vec<u8>>
+    where
+        T: Serialize,
+    {
+        let mut serializer = Serializer {
+            stack: Vec::new()
+        };
+        serializer.stack.push(Vec::new());
+        value.serialize(&mut serializer)?;
+        Ok(serializer.stack.pop().unwrap())
+    }
+}
+
 fn get_be_bytes_compact(src: &[u8]) -> &[u8] {
     for (i, &c) in src.iter().enumerate() {
         if c != 0 { return src.split_at(i).1 }
     }
     unreachable!()
-}
-
-/// This function serialize a type instance into a byte vector with RLP encoding.
-/// Note that we treat all compund types in rust as list.
-/// Also, only **explicitly** values are encoded to keep consistence with the golang 
-/// implementation.
-/// Here *explicit values* corresponds to *implicit values*, which means the values 
-/// used as markers, such as enum variant indexes and type wrappers.
-/// 
-/// For example: 
-/// 
-/// ```rust
-/// struct Int(u8)
-/// 
-/// enum Sample {
-///     Empty,
-///     Int(u8)
-/// }
-/// ```
-/// 
-/// In out implementation, value `Int(15)` and `Sample::Int(15)` and `15_u8` will all
-/// be encoded into the same value. This is because we consider the type wrapper `Int` 
-/// and the variant `Sample::Int()` as implicit values, which are all language-level 
-/// abstractions, thus we only take the value `u8` into consideration.
-/// 
-/// As is explained above, we can easily know that `Sample::Empty` will be encoded into 
-/// an empty byte array because it contains no **explicit** values.
-///  
-pub fn to_bytes<T>(value: &T) -> Result<Vec<u8>>
-where
-    T: Serialize,
-{
-    let mut serializer = Serializer {
-        stack: Vec::new()
-    };
-    serializer.stack.push(Vec::new());
-    value.serialize(&mut serializer)?;
-    Ok(serializer.stack.pop().unwrap())
 }
 
 macro_rules! impl_seralize_integer {
