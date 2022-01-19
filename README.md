@@ -23,7 +23,7 @@ We have to choose this approach because there is no enums in Golang while ETH is
 You can find more examples [here](https://github.com/M4tsuri/serlp/tree/main/example)
 
 ```rust
-use serlp::{de::from_bytes, ser::to_bytes};
+use serlp::rlp::{from_bytes, to_bytes};
 use serde::{Serialize, Deserialize};
 use serde_bytes;
 
