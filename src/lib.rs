@@ -137,6 +137,21 @@ mod test {
     }
 
     #[test]
+    fn test_boxed_value() {
+        #[derive(Serialize, Debug, PartialEq, Eq, Deserialize, Clone)]
+        struct Boxed {
+            a: Box<String>
+        }
+
+        let b = Boxed { a: Box::new("dog".into()) };
+        let expected = [0xc4, 0x83, b'd', b'o', b'g'];
+        let origin: Boxed = from_bytes(&expected).unwrap();
+
+        assert_eq!(origin, b);
+        assert_eq!(to_bytes(&b).unwrap(), expected);
+    }
+
+    #[test]
     fn test_simple_enum() {
         #[derive(Serialize, Debug, PartialEq, Eq)]
         enum Simple {
