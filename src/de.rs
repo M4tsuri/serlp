@@ -25,6 +25,10 @@ impl<'de> Deserializer<'de> {
             tree
         }
     }
+
+    pub fn value_count(&self) -> usize {
+        self.tree.value_count()
+    }
 }
 
 macro_rules! impl_deseralize_not_supported {

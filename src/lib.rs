@@ -141,9 +141,9 @@
 //! ```
 //! 
 
-mod ser;
+pub mod ser;
 pub mod error;
-mod de;
+pub mod de;
 pub mod rlp;
 
 #[cfg(test)]
