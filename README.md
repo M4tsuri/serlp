@@ -46,7 +46,7 @@ In Rust, we can represent 'empty' in many ways, for example:
 [], (), "", b"", struct Empty, Variant::Empty, None, PhantomData<T>
 ```
 
-In out implementation:
+In our implementation:
 
 1. `[]` and `()` are considered empty list, thus should be serialized into 0xc0
 2. All other ZSTs are considered empty, thus should be serialized into 0x80
