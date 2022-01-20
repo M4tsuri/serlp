@@ -71,14 +71,14 @@ where
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum RlpNode<'de> {
     Bytes(&'de [u8]),
     Compound(VecDeque<RlpNode<'de>>)
 }
 
 /// A `RlpTree` is a polytree, each node is either a value or a list.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RlpTree<'de> {
     /// the max capicity of this node is 1, we only use VecDeque for consistency
     root: RlpNode<'de>,
