@@ -38,7 +38,9 @@ For example, the structure in example code, can be internally treated as the fol
 ]
 ```
 
-### ZST serialization
+### Features
+
+#### ZST serialization
 
 In Rust, we can represent 'empty' in many ways, for example:
 
@@ -90,7 +92,7 @@ fn test_compound_zst() {
     }
 ```
 
-### RLP Proxy 
+#### RLP Proxy 
 
 We have a `RlpProxy` struct that implemented `Deserialize` trait, which just stores the original rlp encoded data after deserialization. You can gain more control over the deserialization process with it. 
 
