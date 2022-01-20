@@ -151,7 +151,6 @@ mod test {
     use serde::{Serialize, Deserialize};
     use serde_bytes::Bytes;
 
-    use crate::rlp::RlpTree;
     use crate::rlp::to_bytes;
     use crate::rlp::from_bytes;
 
