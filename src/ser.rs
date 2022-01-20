@@ -1,6 +1,10 @@
-use serde::{ser::{self, SerializeTuple}, Serialize};
-use crate::error::{Error, Result};
+use serde::{
+    ser::{self, SerializeTuple}, 
+    Serialize
+};
 use paste::paste;
+
+use crate::error::{Error, Result};
 
 pub struct Serializer {
     /// the parser stack, we simulate recursion with this structure

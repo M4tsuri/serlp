@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
-
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Serialize, Deserialize};
 
 use crate::{
     ser::Serializer,
-    error::{Result, Error}, de::Deserializer
+    error::{Result, Error}, 
+    de::Deserializer
 };
 
 /// This function serialize a type instance into a byte vector with RLP encoding.
