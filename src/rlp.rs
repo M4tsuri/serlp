@@ -54,18 +54,7 @@ pub fn from_bytes<'a, T>(s: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::new(s)?;
-    let t = T::deserialize(&mut deserializer)?;
-    Ok(t)
-}
-
-/// Sometimes we may have already built the RLP Tree from bytes, this method can help us 
-/// save another extra tree build.
-pub fn from_rlp_tree<'a, T>(tree: RlpTree<'a>) -> Result<T>
-where
-    T: Deserialize<'a>
-{
-    let mut deserializer = Deserializer::with_rlp_tree(tree);
+    let mut deserializer = Deserializer::new(s);
     let t = T::deserialize(&mut deserializer)?;
     Ok(t)
 }
@@ -73,8 +62,8 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RlpNode<'de> {
-    Bytes(&'de [u8]),
-    Compound(VecDeque<RlpNode<'de>>)
+    Bytes((&'de [u8], &'de [u8])),
+    Compound((&'de [u8], VecDeque<RlpNode<'de>>, bool))
 }
 
 /// A `RlpTree` is a polytree, each node is either a value or a list.
@@ -87,7 +76,7 @@ pub struct RlpTree<'de> {
 
 enum TraverseRlp<'de> {
     Found(&'de [u8]),
-    Leave(&'de [u8]),
+    Leaf(&'de [u8]),
     Empty
 }
 
@@ -105,7 +94,7 @@ impl<'de> RlpTree<'de> {
             Err(Error::MalformedData)
         } else {
             Ok(Self {
-                root: RlpNode::Compound(root),
+                root: RlpNode::Compound((buf, root, true)),
                 value_count
             })
         }
@@ -141,11 +130,11 @@ impl<'de> RlpTree<'de> {
     fn extract_bytes(buf: &'de [u8]) -> Result<(RlpNode<'de>, &'de [u8])> {
         Ok(match buf[0] {
             // R_b(x): ||x|| = 1 \land x[0] \lt 128
-            0..=127 => (RlpNode::Bytes(&buf[..1]), &buf[1..]),
+            0..=127 => (RlpNode::Bytes((buf, &buf[..1])), &buf[1..]),
             // (128 + ||x||) \dot x
             len @ 128..=183 => {
                 let pivot = 1 + (len as usize - 128);
-                (RlpNode::Bytes(&buf[1..pivot]), &buf[pivot..])
+                (RlpNode::Bytes((buf, &buf[1..pivot])), &buf[pivot..])
             }
             // (183 + ||BE(||x||)||) \dot BE(||x||) \dot x
             be_len @ 184..=191 => {
@@ -153,14 +142,14 @@ impl<'de> RlpTree<'de> {
                 let len = (&buf[1..]).read_uint::<BigEndian>(be_len)
                     .or(Err(Error::MalformedData))? as usize;
                 let pivot = 1 + be_len + len;
-                (RlpNode::Bytes(&buf[1 + be_len..pivot]), &buf[pivot..])
+                (RlpNode::Bytes((buf, &buf[1 + be_len..pivot])), &buf[pivot..])
             }, 
             _ => unreachable!()  
         })
     }
 
     fn extract_seq(counter: &mut usize, buf: &'de [u8]) -> Result<(RlpNode<'de>, &'de [u8])> {
-        let (mut buf, remained) = match buf[0] {
+        let (mut data, remained) = match buf[0] {
             // (192 + ||s(x)||) \dot s(x)
             len @ 192..=247 => {
                 let len = len as usize - 192;
@@ -179,19 +168,19 @@ impl<'de> RlpTree<'de> {
 
         // now buf is the inner data
         let mut seq = VecDeque::new();
-        while buf.len() != 0 {
-            let (node, remained) = Self::parse_node(counter, buf)?;
-            buf = remained;
+        while data.len() != 0 {
+            let (node, remained) = Self::parse_node(counter, data)?;
+            data = remained;
             seq.push_back(node);
         }
 
-        Ok((RlpNode::Compound(seq), remained))
+        Ok((RlpNode::Compound((buf, seq, true)), remained))
     }
 
     fn pop_front_deep(node: Option<&mut RlpNode<'de>>) -> TraverseRlp<'de> {
         match node {
-            Some(&mut RlpNode::Bytes(bytes)) => TraverseRlp::Leave(bytes),
-            Some(RlpNode::Compound(compound)) => {
+            Some(&mut RlpNode::Bytes((_, bytes))) => TraverseRlp::Leaf(bytes),
+            Some(RlpNode::Compound((_, compound, _))) => {
                 loop {
                     match Self::pop_front_deep(compound.front_mut()) {
                         TraverseRlp::Empty => {
@@ -204,7 +193,7 @@ impl<'de> RlpTree<'de> {
                             return TraverseRlp::Empty
                         },
                         // we found a valid leave, just remove it from the tree
-                        TraverseRlp::Leave(bytes) => {
+                        TraverseRlp::Leaf(bytes) => {
                             compound.pop_front().unwrap();
                             return TraverseRlp::Found(bytes)
                         },
@@ -216,7 +205,6 @@ impl<'de> RlpTree<'de> {
             },
             // this tree is empty, the upper frame will delete it
             None => TraverseRlp::Empty
-
         }
     }
 }

@@ -143,16 +143,52 @@
 
 pub mod ser;
 pub mod error;
-pub mod de;
+pub mod tree_de;
 pub mod rlp;
+pub mod de;
 
 #[cfg(test)]
 mod test {
     use serde::{Serialize, Deserialize};
     use serde_bytes::Bytes;
 
+    use crate::de::RlpProxy;
     use crate::rlp::to_bytes;
     use crate::rlp::from_bytes;
+
+    #[test]
+    fn test_proxy() {
+        #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+        #[serde(from = "RlpProxy")]
+        enum Classify {
+            Zero(u8),
+            One(u8),
+            Ten((u8, u8))
+        }
+        
+        impl From<RlpProxy> for Classify {
+            fn from(proxy: RlpProxy) -> Self {
+                let raw = proxy.raw();
+                let mut tree = proxy.rlp_tree();
+                if tree.value_count() == 2 {
+                    return Classify::Ten(from_bytes(raw).unwrap())
+                }
+
+                let val = tree.next().unwrap()[0];
+                match val {
+                    0 => Classify::Zero(0),
+                    1 => Classify::One(1),
+                    _ => panic!("Value Error.")
+                }
+            }
+        }
+
+        let value = Classify::Ten((12, 34));
+        let encoded = to_bytes(&value).unwrap();
+        let origin = from_bytes(&encoded).unwrap();
+
+        assert_eq!(value, origin);
+    }
 
     #[test]
     fn test_long_string() {

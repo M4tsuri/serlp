@@ -1,73 +1,55 @@
-//! A recursive deserializer, theoritically this is more efficient than the tree 
-//! based one, because all data are decoded only when needed and accessed only once.
-
-use serde::{de::{
-    self, DeserializeSeed, SeqAccess, Visitor,
-}, Deserialize};
+use serde::Deserialize;
+use serde::de::{
+    self, DeserializeSeed, SeqAccess, Visitor, MapAccess,
+};
 use byteorder::{BigEndian, ReadBytesExt};
 
-use crate::{error::{Error, Result}, rlp::RlpTree};
+use crate::error::{Error, Result};
+use crate::rlp::RlpTree;
 use paste::paste;
 
+/// deserialize with a tree-based deserializer
+pub fn from_bytes<'a, T>(s: &'a [u8]) -> Result<T>
+where
+    T: Deserialize<'a>,
+{
+    let mut deserializer = Deserializer::new(s)?;
+    let t = T::deserialize(&mut deserializer)?;
+    Ok(t)
+}
+
+/// Sometimes we may have already built the RLP Tree from bytes, this method can help us 
+/// save another extra tree build.
+pub fn from_rlp_tree<'a, T>(tree: RlpTree<'a>) -> Result<T>
+where
+    T: Deserialize<'a>
+{
+    let mut deserializer = Deserializer::with_rlp_tree(tree);
+    let t = T::deserialize(&mut deserializer)?;
+    Ok(t)
+}
+
 pub struct Deserializer<'de> {
-    input: &'de [u8]
+    tree: RlpTree<'de>,
 }
 
 impl<'de> Deserializer<'de> {
     /// Create a deserializer instance from a byte slice, this will covert 
     /// the slice into a tree and store it.
-    pub fn new(input: &'de [u8]) -> Self {
-        Self { 
-            input
+    pub fn new(input: &'de [u8]) -> Result<Self> {
+        Ok(Self { 
+            tree: RlpTree::new(input)?
+        })
+    }
+
+    pub fn with_rlp_tree(tree: RlpTree<'de>) -> Self {
+        Self {
+            tree
         }
     }
 
-    pub fn next_is_bytes(&self) -> bool {
-        self.input[0] < 192
-    }
-
-    /// return value:
-    /// - RLP encoding of the byte slice,
-    /// - the byte slice,
-    /// - the Deserializer for remaining data
-    pub fn next_bytes(&self) -> Result<(&'de [u8], &'de [u8], Self)> {
-        let buf = self.input;
-        let (start, end) = match buf[0] {
-            // R_b(x): ||x|| = 1 \land x[0] \lt 128
-            0..=127 => (0, 1),
-            // (128 + ||x||) \dot x
-            len @ 128..=183 => (1, 1 + (len as usize - 128)),
-            // (183 + ||BE(||x||)||) \dot BE(||x||) \dot x
-            be_len @ 184..=191 => {
-                let be_len = be_len as usize - 183;
-                let len = (&buf[1..]).read_uint::<BigEndian>(be_len)
-                    .or(Err(Error::MalformedData))? as usize;
-                (1 + be_len, 1 + be_len + len)
-            },
-            _ => Err(Error::MalformedData)?
-        };
-        Ok((&buf[..end], &buf[start..end], Self::new(&buf[end..])))
-    }
-
-    /// return value: 
-    /// - RLP encoding of this sequence, 
-    /// - the deserializer of this sequence
-    /// - the deserializer of remaining data.
-    pub fn next_seq(&self) -> Result<(&'de [u8], Self, Self)> {
-        let buf = self.input;
-        // (192 + ||s(x)||) \dot s(x)
-        let (start, end) = match buf[0] {
-            len @ 192..=247 => (1, 1 + len as usize - 192),
-            be_len @ 248..=255 => {
-                let be_len = be_len as usize - 247;
-                let len = (&buf[1..]).read_uint::<BigEndian>(be_len)
-                    .or(Err(Error::MalformedData))? as usize;
-                (1 + be_len, 1 + be_len + len)
-            },
-            _ => Err(Error::MalformedData)?
-        };
-
-        Ok((&buf[..end], Self::new(&buf[start..end]), Self::new(&buf[end..])))
+    pub fn value_count(&self) -> usize {
+        self.tree.value_count()
     }
 }
 
@@ -91,9 +73,8 @@ macro_rules! impl_deseralize_integer {
             where
                 V: Visitor<'de>,
             {
-                let (_, mut bytes, new) = self.next_bytes()?;
-                *self = new;
-                visitor.[<visit_ $ity>](bytes
+                visitor.[<visit_ $ity>](self.tree.next()
+                    .ok_or(Error::MalformedData)?
                     .[<read_ $ity>]::<BigEndian>()
                     .or(Err(Error::MalformedData))?)
             }
@@ -105,9 +86,8 @@ macro_rules! impl_deseralize_integer {
             where
                 V: Visitor<'de>,
             {
-                let (_, mut bytes, new) = self.next_bytes()?;
-                *self = new;
-                visitor.[<visit_ $ity>](bytes
+                visitor.[<visit_ $ity>](self.tree.next()
+                    .ok_or(Error::MalformedData)?
                     .[<read_ $ity>]()
                     .or(Err(Error::MalformedData))?)
             }
@@ -115,68 +95,13 @@ macro_rules! impl_deseralize_integer {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RlpProxy(Vec<u8>);
-
-impl RlpProxy {
-    pub fn raw(&self) -> &[u8] {
-        &self.0
-    }
-
-    pub fn rlp_tree(&self) -> RlpTree {
-        RlpTree::new(&self.0).unwrap()
-    }
-}
-
-impl<'de> Deserialize<'de> for RlpProxy {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de> 
-    {
-        deserializer.deserialize_any(RlpProxyVisitor)
-    }
-}
-
-struct RlpProxyVisitor;
-
-impl<'de> Visitor<'de> for RlpProxyVisitor {
-    type Value = RlpProxy;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("AggregateVisitor Error.")
-    }
-
-    fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> std::result::Result<Self::Value, E>
-    where
-        E: de::Error
-    {
-        Ok(RlpProxy(v.to_vec()))
-    }
-}
-
 /// We must make sure 'de outlives
 impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
-    impl_deseralize_not_supported! {bool, f32, f64, identifier, ignored_any, map}
+    impl_deseralize_not_supported! {any, bool, f32, f64, identifier, ignored_any, map}
     impl_deseralize_integer! {@bytes i16, i32, i64, u16, u32, u64}
     impl_deseralize_integer! {@single u8, i8}
-
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de> 
-    {
-        let (bytes, new) = if self.next_is_bytes() {
-            let (bytes, _, new) = self.next_bytes()?;
-            (bytes, new)
-        } else {
-            let (bytes, _, new) = self.next_seq()?;
-            (bytes, new)
-        };
-        
-        *self = new;
-        visitor.visit_borrowed_bytes(bytes)
-    }
 
     // The `Serializer` implementation on the previous page serialized chars as
     // single-character strings so handle that representation here.
@@ -184,10 +109,9 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let (_, bytes, new) = self.next_bytes()?;
-        *self = new;
-        let string = String::from_utf8(bytes.to_vec())
-            .or(Err(Error::MalformedData))?;
+        let string = String::from_utf8(self.tree.next()
+            .ok_or(Error::MalformedData)?
+            .to_vec()).or(Err(Error::MalformedData))?;
         
         visitor.visit_char(
             string
@@ -204,9 +128,8 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let (_, bytes, new) = self.next_bytes()?;
-        *self = new;
-        let string = std::str::from_utf8(bytes)
+        let string = std::str::from_utf8(self.tree.next()
+            .ok_or(Error::MalformedData)?)
             .or(Err(Error::MalformedData))?;
 
         visitor.visit_borrowed_str(string)
@@ -225,9 +148,8 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let (_, bytes, new) = self.next_bytes()?;
-        *self = new;
-        visitor.visit_borrowed_bytes(bytes)
+        visitor.visit_borrowed_bytes(self.tree.next()
+            .ok_or(Error::MalformedData)?)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
@@ -249,14 +171,7 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-
-        let (_, seq, new) = self.next_seq()?;
-        *self = new;
-        if seq.input.is_empty() {
-            visitor.visit_unit()
-        } else {
-            Err(Error::MalformedData)
-        }
+        visitor.visit_unit()
     }
 
     // Unit struct means a named value containing no data.
@@ -268,9 +183,9 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let (_, bytes, new) = self.next_bytes()?;
-        *self = new;
-        if bytes.is_empty() {
+        let empty = self.tree.next()
+            .ok_or(Error::MalformedData)?;
+        if empty.len() == 0 {
             visitor.visit_unit()
         } else {
             Err(Error::MalformedData)
@@ -298,9 +213,9 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let (_, seq, new) = self.next_seq()?;
-        *self = new;
-        visitor.visit_seq(seq)
+        // lifetime is 'a
+        // unimplemented!()
+        visitor.visit_seq(CompoundAccess::new(self))
     }
 
     // Tuples look just like sequences in JSON. Some formats may be able to
@@ -344,7 +259,7 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        self.deserialize_seq(visitor)
+        visitor.visit_seq(CompoundAccess::new(self))
     }
 
     fn deserialize_enum<V>(
@@ -360,9 +275,23 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
+
+struct CompoundAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+}
+
+impl<'a, 'de> CompoundAccess<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>) -> Self {
+        Self {
+            de
+        }
+    }
+}
+
+
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'de, 'a> SeqAccess<'de> for Deserializer<'de> {
+impl<'de, 'a> SeqAccess<'de> for CompoundAccess<'a, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -370,6 +299,24 @@ impl<'de, 'a> SeqAccess<'de> for Deserializer<'de> {
         T: DeserializeSeed<'de>,
     {
         // Deserialize an array element.
-        seed.deserialize(&mut *self).map(Some)
+        seed.deserialize(&mut *self.de).map(Some)
+    }
+}
+
+impl<'de, 'a> MapAccess<'de> for CompoundAccess<'a, 'de> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>>
+    where
+        K: DeserializeSeed<'de> 
+    {
+        Ok(None)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+    where
+        V: DeserializeSeed<'de> 
+    {
+        seed.deserialize(&mut *self.de)
     }
 }
