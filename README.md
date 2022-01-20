@@ -3,7 +3,7 @@
 ### Cargo.toml
 
 ```
-serlp = "0.2.1"
+serlp = "0.2.2"
 serde = { version = "1.0", features = ['derive'] }
 ```
 
@@ -88,6 +88,39 @@ fn test_compound_zst() {
     // the container is a list, to this is equivlent to [""]
     assert_eq!(with_zst_res, [0xc1, 0x80]);
     }
+```
+
+### RLP Proxy 
+
+We have a `RlpProxy` struct that implemented `Deserialize` trait, which just stores the original rlp encoded data after deserialization. You can gain more control over the deserialization process with it. 
+
+Here is an example:
+
+```rust
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(from = "RlpProxy")]
+enum Classify {
+    Zero(u8),
+    One(u8),
+    Ten((u8, u8))
+}
+
+impl From<RlpProxy> for Classify {
+    fn from(proxy: RlpProxy) -> Self {
+        let raw = proxy.raw();
+        let mut tree = proxy.rlp_tree();
+        if tree.value_count() == 2 {
+            return Classify::Ten(from_bytes(raw).unwrap())
+        }
+
+        let val = tree.next().unwrap()[0];
+        match val {
+            0 => Classify::Zero(0),
+            1 => Classify::One(1),
+            _ => panic!("Value Error.")
+        }
+    }
+}
 ```
 
 ### Example code

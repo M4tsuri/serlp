@@ -1,3 +1,5 @@
+//! A tree based deserializer, do not use it. The recursive one is better.
+
 use serde::Deserialize;
 use serde::de::{
     self, DeserializeSeed, SeqAccess, Visitor, MapAccess,

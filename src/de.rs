@@ -115,6 +115,36 @@ macro_rules! impl_deseralize_integer {
     }
 }
 
+/// A proxy for more refined manipulation of data when deserializing. 
+/// 
+/// Here is an example about how to use it.
+/// 
+/// ```
+///  #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+/// #[serde(from = "RlpProxy")]
+/// enum Classify {
+///     Zero(u8),
+///     One(u8),
+///     Ten((u8, u8))
+/// }
+/// 
+/// impl From<RlpProxy> for Classify {
+///     fn from(proxy: RlpProxy) -> Self {
+///         let raw = proxy.raw();
+///         let mut tree = proxy.rlp_tree();
+///         if tree.value_count() == 2 {
+///             return Classify::Ten(from_bytes(raw).unwrap())
+///         }
+/// 
+///         let val = tree.next().unwrap()[0];
+///         match val {
+///             0 => Classify::Zero(0),
+///             1 => Classify::One(1),
+///             _ => panic!("Value Error.")
+///         }
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RlpProxy(Vec<u8>);
 
