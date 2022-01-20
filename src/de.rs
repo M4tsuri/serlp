@@ -157,7 +157,13 @@ impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        self.deserialize_unit(visitor)
+        let empty = self.tree.next()
+            .ok_or(Error::MalformedData)?;
+        if empty.len() == 0 {
+            visitor.visit_unit()
+        } else {
+            Err(Error::MalformedData)
+        }
     }
 
     // As is done here, serializers are encouraged to treat newtype structs as

@@ -119,6 +119,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     /// So what is the difference between (), (()), None, "" and []
     /// none just means nothing, it not even an empty list
     fn serialize_none(self) -> Result<()> {
+        let last = self.stack.last_mut().unwrap();
+        last.push(0x80);
         Ok(())
     }
 
