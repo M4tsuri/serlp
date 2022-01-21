@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Serialize, Deserialize};
 
 use crate::{
@@ -59,14 +58,21 @@ where
     Ok(t)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RlpNodeValue<'de> {
+    Bytes(&'de [u8]),
+    Compound(VecDeque<RlpNode<'de>>)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RlpNode<'de> {
-    Bytes((&'de [u8], &'de [u8])),
-    Compound((&'de [u8], VecDeque<RlpNode<'de>>))
+pub struct RlpNode<'de> {
+    span: &'de [u8],
+    value: RlpNodeValue<'de>
 }
 
 /// A `RlpTree` is a polytree, each node is either a value or a list.
+/// We build the tree by simulating the deserialization process with 
+/// `de::Deserializer`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RlpTree<'de> {
     /// the max capicity of this node is 1, we only use VecDeque for consistency
@@ -88,31 +94,35 @@ impl<'de> RlpTree<'de> {
         let mut root = VecDeque::with_capacity(1);
         let mut value_count = 0;
 
-        let (tree, remained) = Self::parse_node(&mut value_count, buf)?;
+        let de = Deserializer::new(buf);
+        let (tree, remained) = Self::parse_node(&mut value_count, de)?;
         root.push_back(tree);
         if !remained.is_empty() {
             Err(Error::MalformedData)
         } else {
             Ok(Self {
-                root: RlpNode::Compound((buf, root)),
+                root: RlpNode {
+                    span: buf,
+                    value: RlpNodeValue::Compound(root),
+                },
                 value_count
             })
         }
     }
 
     pub fn root(&'de self) -> &RlpNode {
-        if let RlpNode::Compound((_, root)) = &self.root {
+        if let RlpNodeValue::Compound(root) = &self.root.value {
             root.front().unwrap()
         } else {
-            panic!("Malformed RLP tree.")
+            panic!("No root node: Tree is empty.")
         }
     }
 
     pub fn root_mut(&'de mut self) -> &mut RlpNode {
-        if let RlpNode::Compound((_, root)) = &mut self.root {
+        if let RlpNodeValue::Compound(root) = &mut self.root.value {
             root.front_mut().unwrap()
         } else {
-            panic!("Malformed RLP tree.")
+            panic!("No root node: Tree is empty.")
         }
     }
 
@@ -132,71 +142,49 @@ impl<'de> RlpTree<'de> {
     }
 
     /// parse a single node
-    fn parse_node(counter: &mut usize, buf: &'de [u8]) -> Result<(RlpNode<'de>, &'de [u8])> {
-        match buf[0] {
-            0..=191 => {
-                *counter += 1;
-                Self::extract_bytes(buf)
-            },
-            // Compound type
-            192..=255 => Self::extract_seq(counter, buf)
+    fn parse_node(counter: &mut usize, de: Deserializer<'de>) -> Result<(RlpNode<'de>, Deserializer<'de>)> {
+        if de.next_is_bytes() {
+            *counter += 1;
+            Self::extract_bytes(de)
+        } else {
+            Self::extract_seq(counter, de)
         }
     }
 
-    fn extract_bytes(buf: &'de [u8]) -> Result<(RlpNode<'de>, &'de [u8])> {
-        Ok(match buf[0] {
-            // R_b(x): ||x|| = 1 \land x[0] \lt 128
-            0..=127 => (RlpNode::Bytes((buf, &buf[..1])), &buf[1..]),
-            // (128 + ||x||) \dot x
-            len @ 128..=183 => {
-                let pivot = 1 + (len as usize - 128);
-                (RlpNode::Bytes((buf, &buf[1..pivot])), &buf[pivot..])
-            }
-            // (183 + ||BE(||x||)||) \dot BE(||x||) \dot x
-            be_len @ 184..=191 => {
-                let be_len = be_len as usize - 183;
-                let len = (&buf[1..]).read_uint::<BigEndian>(be_len)
-                    .or(Err(Error::MalformedData))? as usize;
-                let pivot = 1 + be_len + len;
-                (RlpNode::Bytes((buf, &buf[1 + be_len..pivot])), &buf[pivot..])
-            }, 
-            _ => unreachable!()  
-        })
+    fn extract_bytes(de: Deserializer<'de>) -> Result<(RlpNode<'de>, Deserializer<'de>)> {
+        let (span, bytes, new) = de.next_bytes()?;
+        Ok((RlpNode {
+            span,
+            value: RlpNodeValue::Bytes(bytes)
+        }, new))
     }
 
-    fn extract_seq(counter: &mut usize, buf: &'de [u8]) -> Result<(RlpNode<'de>, &'de [u8])> {
-        let (mut data, remained) = match buf[0] {
-            // (192 + ||s(x)||) \dot s(x)
-            len @ 192..=247 => {
-                let len = len as usize - 192;
-                let pivot = len + 1;
-                (&buf[1..pivot], &buf[pivot..])
-            },
-            be_len @ 248..=255 => {
-                let be_len = be_len as usize - 247;
-                let len = (&buf[1..]).read_uint::<BigEndian>(be_len)
-                    .or(Err(Error::MalformedData))? as usize;
-                let pivot = 1 + be_len + len;
-                (&buf[1 + be_len..pivot], &buf[pivot..])
-            },
-            _ => unreachable!()
-        };
+    fn extract_seq(counter: &mut usize, de: Deserializer<'de>) -> Result<(RlpNode<'de>, Deserializer<'de>)> {
+        let (span, mut seq, remained) = de.next_seq()?;
 
         // now buf is the inner data
-        let mut seq = VecDeque::new();
-        while data.len() != 0 {
-            let (node, remained) = Self::parse_node(counter, data)?;
-            data = remained;
-            seq.push_back(node);
+        let mut nodes = VecDeque::new();
+        while !seq.is_empty()  {
+            let (node, remained) = Self::parse_node(counter, seq)?;
+            seq = remained;
+            nodes.push_back(node);
         }
 
-        Ok((RlpNode::Compound((buf, seq)), remained))
+        Ok((RlpNode {
+            span,
+            value: RlpNodeValue::Compound(nodes)
+        }, remained))
     }
 
     fn pop_front_deep(node: Option<&mut RlpNode<'de>>) -> TraverseRlp<'de> {
-        match node {
-            Some(&mut RlpNode::Bytes((_, bytes))) => TraverseRlp::Leaf(bytes),
-            Some(RlpNode::Compound((_, compound))) => {
+        let node = if let Some(node) = node {
+            node
+        } else {
+            return TraverseRlp::Empty
+        };
+        match &mut node.value {
+            RlpNodeValue::Bytes(bytes) => TraverseRlp::Leaf(bytes),
+            RlpNodeValue::Compound(compound) => {
                 loop {
                     match Self::pop_front_deep(compound.front_mut()) {
                         TraverseRlp::Empty => {
@@ -218,9 +206,7 @@ impl<'de> RlpTree<'de> {
                         }
                     }
                 }
-            },
-            // this tree is empty, the upper frame will delete it
-            None => TraverseRlp::Empty
+            }
         }
     }
 }

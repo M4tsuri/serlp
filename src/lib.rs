@@ -153,8 +153,10 @@ mod test {
     use serde_bytes::Bytes;
 
     use crate::de::RlpProxy;
+    use crate::rlp::RlpTree;
     use crate::rlp::to_bytes;
     use crate::rlp::from_bytes;
+    use crate::tree_de::from_rlp_tree;
 
     #[test]
     fn test_proxy() {
@@ -536,8 +538,11 @@ mod test {
         };
 
         let encode = to_bytes(&embed).unwrap();
+        let tree = RlpTree::new(&encode).unwrap();
         let origin: Embeding = from_bytes(&encode).unwrap();
-        assert_eq!(embed, origin)
+        let origin_with_tree = from_rlp_tree(tree).unwrap();
+        assert_eq!(embed, origin);
+        assert_eq!(embed, origin_with_tree);
     }
 
 }

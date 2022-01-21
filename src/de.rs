@@ -22,6 +22,10 @@ impl<'de> Deserializer<'de> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.input.is_empty()
+    }
+
     pub fn next_is_bytes(&self) -> bool {
         self.input[0] < 192
     }
