@@ -89,7 +89,7 @@ fn test_compound_zst() {
     let with_zst_res = to_bytes(&with_zst).unwrap();
     // the container is a list, to this is equivlent to [""]
     assert_eq!(with_zst_res, [0xc1, 0x80]);
-    }
+}
 ```
 
 #### RLP Proxy 
