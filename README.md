@@ -94,7 +94,7 @@ fn test_compound_zst() {
 
 #### RLP Proxy 
 
-We have a `RlpProxy` struct that implemented `Deserialize` trait, which just stores the original rlp encoded data after deserialization. You can gain more control over the deserialization process with it. 
+We have a `RlpProxy` struct that implemented `Deserialize` trait, which just stores the original rlp encoded data after deserialization (no matter what type it is). You can gain more control over the deserialization process with it. 
 
 Here is an example:
 
