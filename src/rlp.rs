@@ -61,9 +61,9 @@ where
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum RlpNode<'de> {
+pub enum RlpNode<'de> {
     Bytes((&'de [u8], &'de [u8])),
-    Compound((&'de [u8], VecDeque<RlpNode<'de>>, bool))
+    Compound((&'de [u8], VecDeque<RlpNode<'de>>))
 }
 
 /// A `RlpTree` is a polytree, each node is either a value or a list.
@@ -94,10 +94,14 @@ impl<'de> RlpTree<'de> {
             Err(Error::MalformedData)
         } else {
             Ok(Self {
-                root: RlpNode::Compound((buf, root, true)),
+                root: RlpNode::Compound((buf, root)),
                 value_count
             })
         }
+    }
+
+    pub fn root(&self) -> &RlpNode {
+        &self.root
     }
 
     /// Each tree contains a `value_count` field. This value initially 
@@ -174,13 +178,13 @@ impl<'de> RlpTree<'de> {
             seq.push_back(node);
         }
 
-        Ok((RlpNode::Compound((buf, seq, true)), remained))
+        Ok((RlpNode::Compound((buf, seq)), remained))
     }
 
     fn pop_front_deep(node: Option<&mut RlpNode<'de>>) -> TraverseRlp<'de> {
         match node {
             Some(&mut RlpNode::Bytes((_, bytes))) => TraverseRlp::Leaf(bytes),
-            Some(RlpNode::Compound((_, compound, _))) => {
+            Some(RlpNode::Compound((_, compound))) => {
                 loop {
                     match Self::pop_front_deep(compound.front_mut()) {
                         TraverseRlp::Empty => {
