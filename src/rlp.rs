@@ -100,8 +100,20 @@ impl<'de> RlpTree<'de> {
         }
     }
 
-    pub fn root(&self) -> &RlpNode {
-        &self.root
+    pub fn root(&'de self) -> &RlpNode {
+        if let RlpNode::Compound((_, root)) = &self.root {
+            root.front().unwrap()
+        } else {
+            panic!("Malformed RLP tree.")
+        }
+    }
+
+    pub fn root_mut(&'de mut self) -> &mut RlpNode {
+        if let RlpNode::Compound((_, root)) = &mut self.root {
+            root.front_mut().unwrap()
+        } else {
+            panic!("Malformed RLP tree.")
+        }
     }
 
     /// Each tree contains a `value_count` field. This value initially 
