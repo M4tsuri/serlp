@@ -66,8 +66,8 @@ pub enum RlpNodeValue<'de> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RlpNode<'de> {
-    span: &'de [u8],
-    value: RlpNodeValue<'de>
+    pub span: &'de [u8],
+    pub value: RlpNodeValue<'de>
 }
 
 /// A `RlpTree` is a polytree, each node is either a value or a list.
