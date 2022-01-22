@@ -146,9 +146,13 @@ pub mod error;
 pub mod tree_de;
 pub mod rlp;
 pub mod de;
+pub mod types;
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
+    use num_bigint::BigUint;
     use serde::{Serialize, Deserialize};
     use serde_bytes::Bytes;
 
@@ -157,6 +161,34 @@ mod test {
     use crate::rlp::to_bytes;
     use crate::rlp::from_bytes;
     use crate::tree_de::from_rlp_tree;
+
+    #[test]
+    fn test_bn() {
+        struct LegacyTx {
+            nonce: u64
+        }
+        #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+        struct Account {
+            nonce: u64,
+            #[serde(with = "crate::bn::uint")]
+            balance: BigUint,
+            #[serde(with = "serde_bytes")]
+            root: Vec<u8>,
+            #[serde(with = "serde_bytes")]
+            codehash: Vec<u8>
+        }
+
+        let account = Account {
+            nonce: 114514,
+            balance: BigUint::from_str("11451419198103141592643383279502884197").unwrap(),
+            root: b"1234567890123456789012".to_vec(),
+            codehash: b"1234567890123456789012".to_vec(),
+        };
+
+        let encoded = to_bytes(&account).unwrap();
+        let orig: Account = from_bytes(&encoded).unwrap();
+        assert_eq!(orig, account);
+    }
 
     #[test]
     fn test_proxy() {

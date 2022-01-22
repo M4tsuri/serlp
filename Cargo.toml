@@ -18,6 +18,5 @@ documentation = "https://docs.rs/serlp"
 serde = { version = "1.0.133", features = ['derive'] }
 paste = "1.0"
 byteorder = "1.4.3"
-
-[dev-dependencies]
+num-bigint = "0.4.3"
 serde_bytes = "0.11"
