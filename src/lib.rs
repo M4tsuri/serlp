@@ -262,7 +262,7 @@ mod test {
         struct Int(u8);
 
         let simp_str = Int(0);
-        let simp_str_expected = [0x00];
+        let simp_str_expected = [0x80];
         let origin: Int = from_bytes(&simp_str_expected).unwrap();
 
         assert_eq!(to_bytes(&simp_str).unwrap(), simp_str_expected);
