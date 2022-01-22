@@ -143,51 +143,71 @@
 
 pub mod ser;
 pub mod error;
-pub mod tree_de;
 pub mod rlp;
 pub mod de;
 pub mod types;
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
-
     use num_bigint::BigUint;
     use serde::{Serialize, Deserialize};
     use serde_bytes::Bytes;
+    use hex;
 
     use crate::de::RlpProxy;
-    use crate::rlp::RlpTree;
     use crate::rlp::to_bytes;
     use crate::rlp::from_bytes;
-    use crate::tree_de::from_rlp_tree;
+    use crate::types::{biguint, byte_array};
 
+    /// The transcation is the #0 transcation of 
+    /// https://api.etherscan.io/api?module=proxy&action=eth_getBlockByNumber&tag=0xa1a489&boolean=true&apikey=YourApiKeyToken
+    /// The encoded data is from README of 
+    /// https://github.com/zhangchiqing/merkle-patricia-trie
     #[test]
     fn test_bn() {
-        struct LegacyTx {
-            nonce: u64
-        }
         #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-        struct Account {
+        struct LegacyTx {
             nonce: u64,
-            #[serde(with = "crate::bn::uint")]
-            balance: BigUint,
+            #[serde(with = "biguint")]
+            gas_price: BigUint,
+            gas_limit: u64,
+            #[serde(with = "byte_array")]
+            to: [u8; 20],
+            #[serde(with = "biguint")]
+            value: BigUint,
             #[serde(with = "serde_bytes")]
-            root: Vec<u8>,
-            #[serde(with = "serde_bytes")]
-            codehash: Vec<u8>
+            data: Vec<u8>,
+            #[serde(with = "biguint")]
+            v: BigUint,
+            #[serde(with = "biguint")]
+            r: BigUint,
+            #[serde(with = "biguint")]
+            s: BigUint
         }
 
-        let account = Account {
-            nonce: 114514,
-            balance: BigUint::from_str("11451419198103141592643383279502884197").unwrap(),
-            root: b"1234567890123456789012".to_vec(),
-            codehash: b"1234567890123456789012".to_vec(),
+        let mut to = [0; 20];
+        to.copy_from_slice(&hex::decode("a3bed4e1c75d00fa6f4e5e6922db7261b5e9acd2").unwrap());
+
+        let bn = |s| BigUint::from_bytes_be(&hex::decode(s).unwrap());
+        
+        let tx = LegacyTx {
+            nonce: 0xa5,
+            gas_price: bn("2e90edd000"),
+            gas_limit: 0x12bc2,
+            to,
+            value: bn("00"),
+            data: hex::decode("a9059cbb0000000000000000000000008bda8b9823b8490e8cf220dc7b91d97da1c54e250000000000000000000000000000000000000000000000056bc75e2d63100000").unwrap(),
+            v: bn("26"),
+            r: bn("6c89b57113cf7da8aed7911310e03d49be5e40de0bd73af4c9c54726c478691b"),
+            s: bn("56223f039fab98d47c71f84190cf285ce8fc7d9181d6769387e5efd0a970e2e9")
         };
 
-        let encoded = to_bytes(&account).unwrap();
-        let orig: Account = from_bytes(&encoded).unwrap();
-        assert_eq!(orig, account);
+        let expected = "f8ab81a5852e90edd00083012bc294a3bed4e1c75d00fa6f4e5e6922db7261b5e9acd280b844a9059cbb0000000000000000000000008bda8b9823b8490e8cf220dc7b91d97da1c54e250000000000000000000000000000000000000000000000056bc75e2d6310000026a06c89b57113cf7da8aed7911310e03d49be5e40de0bd73af4c9c54726c478691ba056223f039fab98d47c71f84190cf285ce8fc7d9181d6769387e5efd0a970e2e9";
+
+        let encoded = to_bytes(&tx).unwrap();
+        let orig: LegacyTx = from_bytes(&encoded).unwrap();
+        assert_eq!(orig, tx);
+        assert_eq!(hex::encode(encoded), expected);
     }
 
     #[test]
@@ -473,7 +493,7 @@ mod test {
         #[derive(Serialize, Debug, PartialEq, Eq, Deserialize, Clone)]
         struct Embedded {
             time: u64,
-            out: (u8, i32),
+            out: (u8, u32),
             three: Third<((), ((),), ((), ((),)))>
         }
 
@@ -493,7 +513,7 @@ mod test {
             tag: "This is a tooooooooooooo loooooooooooooooooooong tag",
             ed: Embedded {
                 time: 114514,
-                out: (191, -9810),
+                out: (191, 9810),
                 three: Third {
                     inner: ((), ((),), ((), ((),)))
                 }
@@ -553,7 +573,7 @@ mod test {
         #[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
         struct Embedded {
             time: u64,
-            out: (u8, i32),
+            out: (u8, u32),
             three: Third<((), ((),), ((), ((),)))>
         }
 
@@ -561,7 +581,7 @@ mod test {
             tag: "This is a tooooooooooooo loooooooooooooooooooong tag",
             ed: Embedded {
                 time: 114514,
-                out: (191, -9810),
+                out: (191, 9810),
                 three: Third {
                     inner: ((), ((),), ((), ((),)))
                 }
@@ -570,11 +590,8 @@ mod test {
         };
 
         let encode = to_bytes(&embed).unwrap();
-        let tree = RlpTree::new(&encode).unwrap();
         let origin: Embeding = from_bytes(&encode).unwrap();
-        let origin_with_tree = from_rlp_tree(tree).unwrap();
         assert_eq!(embed, origin);
-        assert_eq!(embed, origin_with_tree);
     }
 
 }

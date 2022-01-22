@@ -1,6 +1,7 @@
 //! A recursive deserializer, theoritically this is more efficient than the tree 
 //! based one, because all data are decoded only when needed and accessed only once.
 
+use std::mem;
 use serde::{de::{
     self, DeserializeSeed, SeqAccess, Visitor,
 }, Deserialize};
@@ -75,6 +76,12 @@ impl<'de> Deserializer<'de> {
     }
 }
 
+fn be_bytes_expand<const N: usize>(src: &[u8]) -> [u8; N] {
+    let mut dest = [0_u8; N];
+    dest[N - src.len()..].copy_from_slice(src);
+    dest
+}
+
 macro_rules! impl_deseralize_not_supported {
     ($($ity:ident),+) => {
         paste! {$(
@@ -89,31 +96,16 @@ macro_rules! impl_deseralize_not_supported {
 }
 
 macro_rules! impl_deseralize_integer {
-    (@bytes $($ity:ident),+) => {
+    ($($ity:ident),+) => {
         paste! {$(
             fn [<deserialize_ $ity>]<V>(self, visitor: V) -> Result<V::Value>
             where
                 V: Visitor<'de>,
             {
-                let (_, mut bytes, new) = self.next_bytes()?;
+                let (_, bytes, new) = self.next_bytes()?;
+                let expanded = be_bytes_expand::<{ mem::size_of::<$ity>() }>(bytes);
                 *self = new;
-                visitor.[<visit_ $ity>](bytes
-                    .[<read_ $ity>]::<BigEndian>()
-                    .or(Err(Error::MalformedData))?)
-            }
-        )+}
-    };
-    (@single $($ity:ident),+) => {
-        paste! {$(
-            fn [<deserialize_ $ity>]<V>(self, visitor: V) -> Result<V::Value>
-            where
-                V: Visitor<'de>,
-            {
-                let (_, mut bytes, new) = self.next_bytes()?;
-                *self = new;
-                visitor.[<visit_ $ity>](bytes
-                    .[<read_ $ity>]()
-                    .or(Err(Error::MalformedData))?)
+                visitor.[<visit_ $ity>]($ity::from_be_bytes(expanded))
             }
         )+}
     }
@@ -192,9 +184,8 @@ impl<'de> Visitor<'de> for RlpProxyVisitor {
 impl<'de: 'a, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
-    impl_deseralize_not_supported! {bool, f32, f64, identifier, ignored_any, map}
-    impl_deseralize_integer! {@bytes i16, i32, i64, u16, u32, u64}
-    impl_deseralize_integer! {@single u8, i8}
+    impl_deseralize_not_supported! {bool, f32, f64, identifier, ignored_any, map, i16, i32, i64, i8}
+    impl_deseralize_integer! {u8, u16, u32, u64}
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where

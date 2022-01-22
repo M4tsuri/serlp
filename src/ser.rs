@@ -25,18 +25,18 @@ impl Serializer {
     }
 }
 
-fn get_be_bytes_compact(src: &[u8]) -> &[u8] {
-    for (i, &c) in src.iter().enumerate() {
-        if c != 0 { return src.split_at(i).1 }
+fn be_bytes_compact(src: &[u8]) -> &[u8] {
+    for i in 0..src.len() {
+        if src[i] != 0 { return &src[i..] }
     }
-    unreachable!()
+    return &[0]
 }
 
 macro_rules! impl_seralize_integer {
     ($($ity:ident),+) => {
         paste! {$(
             fn [<serialize_ $ity>](self, v: $ity) -> Result<()> {
-                self.serialize_bytes(&v.to_be_bytes())
+                self.serialize_bytes(be_bytes_compact(&v.to_be_bytes()))
             }
         )+}
     }
@@ -79,10 +79,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStructVariant = Self;
 
     // yellow paper didn't mention how to encode bool and floats
-    impl_seralize_not_supported! {bool, f32, f64}
+    impl_seralize_not_supported! {bool, f32, f64, i8, i16, i32, i64}
     
     // according to yellow paper, integers should be encoded as bytes (big endian)
-    impl_seralize_integer! {i8, i16, i32, i64, u8, u16, u32, u64}
+    impl_seralize_integer! {u8, u16, u32, u64}
 
     /// Serialize a char as a single-character string. 
     fn serialize_char(self, v: char) -> Result<()> {
@@ -109,7 +109,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             // (183 + ||BE(||x||)||) \dot BE(||x||) \dot x if ||x|| \lt 2^64
             56..=u64::MAX => {
                 let be_bytes = v.len().to_be_bytes();
-                let len_be = get_be_bytes_compact(&be_bytes);
+                let len_be = be_bytes_compact(&be_bytes);
                 last.push(183 + len_be.len() as u8);
                 last.extend(len_be);
                 last.extend(v);
@@ -390,7 +390,7 @@ impl Serializer {
             },
             56..=u64::MAX => {
                 let be_bytes = len.to_be_bytes();
-                let len_be = get_be_bytes_compact(&be_bytes);
+                let len_be = be_bytes_compact(&be_bytes);
                 last.push(247 + len_be.len() as u8);
                 last.extend(len_be);
                 last.extend(frame);
