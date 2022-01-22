@@ -7,6 +7,59 @@ serlp = "0.3.0"
 serde = { version = "1.0", features = ['derive'] }
 ```
 
+### Example
+
+This example shows how can we encode a real transcation on ETH mainnet with the help of serlp.
+
+The transcation is the #0 transcation of https://api.etherscan.io/api?module=proxy&action=eth_getBlockByNumber&tag=0xa1a489&boolean=true&apikey=YourApiKeyToken. The encoded data is from README of https://github.com/zhangchiqing/merkle-patricia-trie.
+
+```rust
+fn test_bn() {
+    #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+    struct LegacyTx {
+        nonce: u64,
+        #[serde(with = "biguint")]
+        gas_price: BigUint,
+        gas_limit: u64,
+        #[serde(with = "byte_array")]
+        to: [u8; 20],
+        #[serde(with = "biguint")]
+        value: BigUint,
+        #[serde(with = "serde_bytes")]
+        data: Vec<u8>,
+        #[serde(with = "biguint")]
+        v: BigUint,
+        #[serde(with = "biguint")]
+        r: BigUint,
+        #[serde(with = "biguint")]
+        s: BigUint
+    }
+
+    let mut to = [0; 20];
+    to.copy_from_slice(&hex::decode("a3bed4e1c75d00fa6f4e5e6922db7261b5e9acd2").unwrap());
+    let bn = |s| BigUint::from_bytes_be(&hex::decode(s).unwrap());
+    
+    let tx = LegacyTx {
+        nonce: 0xa5,
+        gas_price: bn("2e90edd000"),
+        gas_limit: 0x12bc2,
+        to,
+        value: bn("00"),
+        data: hex::decode("a9059cbb0000000000000000000000008bda8b9823b8490e8cf220dc7b91d97da1c54e250000000000000000000000000000000000000000000000056bc75e2d63100000").unwrap(),
+        v: bn("26"),
+        r: bn("6c89b57113cf7da8aed7911310e03d49be5e40de0bd73af4c9c54726c478691b"),
+        s: bn("56223f039fab98d47c71f84190cf285ce8fc7d9181d6769387e5efd0a970e2e9")
+    };
+
+    let expected = "f8ab81a5852e90edd00083012bc294a3bed4e1c75d00fa6f4e5e6922db7261b5e9acd280b844a9059cbb0000000000000000000000008bda8b9823b8490e8cf220dc7b91d97da1c54e250000000000000000000000000000000000000000000000056bc75e2d6310000026a06c89b57113cf7da8aed7911310e03d49be5e40de0bd73af4c9c54726c478691ba056223f039fab98d47c71f84190cf285ce8fc7d9181d6769387e5efd0a970e2e9";
+    let encoded = to_bytes(&tx).unwrap();
+    let orig: LegacyTx = from_bytes(&encoded).unwrap();
+
+    assert_eq!(orig, tx);
+    assert_eq!(hex::encode(encoded), expected);
+}
+```
+
 ### Not Supported Types 
 
 - bool
@@ -65,54 +118,3 @@ We provide two (de)serializers for frequently used types in blockchain.
 - `byte_array` for `[u8; N]`
 
 Put `#[serde(with = "biguint")]` or `#[serde(with = "byte_array")]` before your struct **field** to use them.
-
-### Example code
-
-You can find more examples [here](https://github.com/M4tsuri/serlp/tree/main/example)
-
-```rust
-use serlp::rlp::{from_bytes, to_bytes};
-use serde::{Serialize, Deserialize};
-use serde_bytes;
-
-#[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
-struct Third<T> {
-    inner: T
-}
-
-#[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
-struct Embeding<'a> {
-    tag: &'a str,
-    ed: Embedded,
-    #[serde(with = "serde_bytes")]
-    bytes: Vec<u8>
-}
-
-#[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
-struct Embedded {
-    time: u64,
-    out: (u8, u32),
-    three: Third<((), ((),), ((), ((),)))>
-}
-
-fn main() {
-    let embed = Embeding {
-        tag: "This is a tooooooooooooo loooooooooooooooooooong tag",
-        ed: Embedded {
-            time: 114514,
-            out: (191, 9810),
-            three: Third {
-                inner: ((), ((),), ((), ((),)))
-            }
-        },
-        bytes: "哼.啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊".as_bytes().to_vec()
-    };
-
-    let encode = to_bytes(&embed).unwrap();
-    let origin: Embeding = from_bytes(&encode).unwrap();
-
-    println!("encode result: {:?}", encode);
-
-    assert_eq!(origin, embed);
-}
-```
