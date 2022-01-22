@@ -17,7 +17,7 @@ struct Embeding<'a> {
 #[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
 struct Embedded {
     time: u64,
-    out: (u8, i32),
+    out: (u8, u32),
     three: Third<((), ((),), ((), ((),)))>
 }
 
@@ -26,7 +26,7 @@ fn main() {
         tag: "This is a tooooooooooooo loooooooooooooooooooong tag",
         ed: Embedded {
             time: 114514,
-            out: (191, -9810),
+            out: (191, 9810),
             three: Third {
                 inner: ((), ((),), ((), ((),)))
             }

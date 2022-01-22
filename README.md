@@ -3,14 +3,14 @@
 ### Cargo.toml
 
 ```
-serlp = "0.2.2"
+serlp = "0.3.0"
 serde = { version = "1.0", features = ['derive'] }
 ```
 
 ### Not Supported Types 
 
 - bool
-- float numbers
+- float numbers and signed integers
 - maps
 - enum (only deserialize)
 
@@ -22,75 +22,7 @@ We have to choose this approach because there is no enums in Golang while ETH is
 
 Accroding to the ETH Yellow Paper, all supported data structure can be represented with either recursive list of byte arrays ![](https://latex.codecogs.com/svg.latex?\mathbb{L}) or byte arrays ![](https://latex.codecogs.com/svg.latex?\mathbb{B}). So we can transform all Rust's compound types, for example, tuple, struct and list, into lists. And then encode them as exactly described in the paper
 
-For example, the structure in example code, can be internally treated as the following form:
-
-```
-[
-    "This is a tooooooooooooo loooooooooooooooooooong tag", 
-    [
-        114514, 
-        [191, -9810], 
-        [
-            [[], [[]], [[], [[]]]]
-        ]
-    ], 
-    "哼.啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊"
-]
-```
-
 ### Features
-
-#### ZST serialization
-
-In Rust, we can represent 'empty' in many ways, for example:
-
-```
-[], (), "", b"", struct Empty, Variant::Empty, None, PhantomData<T>
-```
-
-In our implementation:
-
-1. `[]` and `()` are considered empty list, thus should be serialized into 0xc0
-2. All other ZSTs are considered empty, thus should be serialized into 0x80
-
-To better understand ZSTs' behavior when serializing, try this code:
-
-```rust
-#[test]
-fn test_compound_zst() {
-    #[derive(Serialize, Debug, PartialEq, Eq)]
-    struct ZST;
-
-    #[derive(Serialize, Debug, PartialEq, Eq)]
-    enum Simple {
-        Empty(ZST),
-        #[allow(dead_code)]
-        Int((u32, u64))
-    }
-
-    #[derive(Serialize, Debug, PartialEq, Eq)]
-    struct ContainZST(Simple);
-
-    #[derive(Serialize, Debug, PartialEq, Eq)]
-    struct StructZST {
-        zst: Simple
-    }
-
-    let zst = Simple::Empty(ZST);
-    let zst_res = to_bytes(&zst).unwrap();
-    assert_eq!(zst_res, [0x80]);
-
-    let with_zst = ContainZST(Simple::Empty(ZST));
-    let with_zst_res = to_bytes(&with_zst).unwrap();
-    // the container is transparent because its a newtype
-    assert_eq!(with_zst_res, [0x80]);
-    
-    let with_zst = StructZST { zst: Simple::Empty(ZST) };
-    let with_zst_res = to_bytes(&with_zst).unwrap();
-    // the container is a list, to this is equivlent to [""]
-    assert_eq!(with_zst_res, [0xc1, 0x80]);
-}
-```
 
 #### RLP Proxy 
 
@@ -125,6 +57,15 @@ impl From<RlpProxy> for Classify {
 }
 ```
 
+#### (de)serializers for frequently used types
+
+We provide two (de)serializers for frequently used types in blockchain.
+
+- `biguint` for `num_bigint::BigUint`
+- `byte_array` for `[u8; N]`
+
+Put `#[serde(with = "biguint")]` or `#[serde(with = "byte_array")]` before your struct **field** to use them.
+
 ### Example code
 
 You can find more examples [here](https://github.com/M4tsuri/serlp/tree/main/example)
@@ -150,7 +91,7 @@ struct Embeding<'a> {
 #[derive(Serialize, Debug, PartialEq, Eq, Deserialize)]
 struct Embedded {
     time: u64,
-    out: (u8, i32),
+    out: (u8, u32),
     three: Third<((), ((),), ((), ((),)))>
 }
 
@@ -159,7 +100,7 @@ fn main() {
         tag: "This is a tooooooooooooo loooooooooooooooooooong tag",
         ed: Embedded {
             time: 114514,
-            out: (191, -9810),
+            out: (191, 9810),
             three: Third {
                 inner: ((), ((),), ((), ((),)))
             }

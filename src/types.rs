@@ -33,7 +33,7 @@ pub mod biguint {
     }
 }
 
-/// See https://github.com/serde-rs/bytes/issues/26
+/// See <https://github.com/serde-rs/bytes/issues/26>
 /// We have to manually implement serialize and deserialize 
 /// until specification is supported in rust
 pub mod byte_array {
