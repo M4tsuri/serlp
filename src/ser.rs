@@ -29,7 +29,7 @@ fn be_bytes_compact(src: &[u8]) -> &[u8] {
     for i in 0..src.len() {
         if src[i] != 0 { return &src[i..] }
     }
-    return &[0]
+    return &[]
 }
 
 macro_rules! impl_seralize_integer {
