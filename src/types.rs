@@ -15,7 +15,12 @@ pub mod biguint {
     where
         S: Serializer,
     {
-        serde_bytes::serialize(&bn.to_bytes_be(), serializer)
+        let mut bytes = bn.to_bytes_be();
+        // trim the zero
+        if bytes.len() == 1 && bytes[0] == 0 {
+            bytes.pop();
+        }
+        serde_bytes::serialize(&bytes, serializer)
     }
 
     /// This takes the result of [`serde_bytes::deserialize`] from `[u8]` to `[u8; N]`.
