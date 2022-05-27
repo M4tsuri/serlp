@@ -222,7 +222,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        Err(Error::TypeNotSupported)
+        self.stack.push(Vec::new());
+        Ok(self)
     }
 
     /// We parse struct as we are parsing a sequence
@@ -339,18 +340,19 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        Err(Error::TypeNotSupported)
+        Ok(())
     }
     
-    fn serialize_value<T>(&mut self, _value: &T) -> Result<()>
+    fn serialize_value<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        Err(Error::TypeNotSupported)
+        value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<()> {
-        Err(Error::TypeNotSupported)
+        self.frame_return();
+        Ok(())
     }
 }
 
